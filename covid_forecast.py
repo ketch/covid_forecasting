@@ -274,8 +274,8 @@ def forecast2(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=0.25,gamma=
         dd_low = np.diff(R_mean); dd_high = np.diff(R_mean)
 
         pred_daily_deaths_low = np.diff(R_mean); pred_daily_deaths_high = np.diff(R_mean)
-        for dbeta in np.linspace(-0.05,0.05,6):
-            for dgamma in np.linspace(-0.02,0.02,6):
+        for dbeta in np.linspace(-0.05,0.05,20):
+            for dgamma in np.linspace(-0.01,0.01,20):
                 S, I, R= SIR(u0, beta=beta+dbeta, gamma=gamma+dgamma, N=N, T=lag+forecast_length, q=q,
                              intervention_start=intervention_start+lag,
                              intervention_length=intervention_length)
