@@ -4,6 +4,14 @@ import json
 import os
 import time
 
+def get_population(region):
+    try:
+        N = population[region]
+    except:
+        N = US_state_population[region]
+    return N
+
+
 def jhu_data(remote=False):
     """Fetch data from JHU set on Github and partially parse it.
 
@@ -18,7 +26,7 @@ def jhu_data(remote=False):
     if remote:
         url = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
     else:
-        url = "/Users/ketch/Research/Projects/COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
+        url = "/Users/ketch/Research/Projects/covid-data-sources/JHU_data/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
         # Check that file has been updated today
         timestamp = os.path.getmtime(url)
         if (time.time()-timestamp)/3600 > 12:
@@ -31,38 +39,44 @@ def jhu_data(remote=False):
     if remote:
         url = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv"
     else:
-        url = "/Users/ketch/Research/Projects/COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv"
+        url = "/Users/ketch/Research/Projects/covid-data-sources/JHU_data/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv"
     deaths_df = pd.read_csv(url)
     today = cases_df.columns[-1]
     data_dates = pd.date_range(start='1/22/20',end=today)
     return cases_df, deaths_df, data_dates
+
+def nytimes_data(remote=False):
+    if remote:
+        raise(Exception)
+    else:
+        url = "/Users/ketch/Research/Projects/covid-data-sources/nytimes_data/us-states.csv"
+        # Check that file has been updated today
+        timestamp = os.path.getmtime(url)
+        if (time.time()-timestamp)/3600 > 12:
+            print('Warning: data file is more than 12 hours old.  Please update.')
+        return pd.read_csv(url)        
+
 
 def load_time_series(region):
     """
     Fetch data and parse to get time series of confirmed cases and deaths.
     For now, only works with JHU data.
     """
-
-    cases_df, deaths_df, data_dates = jhu_data()
-
-    #if region in US_state_population.keys():
-    #    postal_code = us_state_abbrev[region]
-    #    state_str = postal_code+', USA'
-    #    with open('/Users/ketch/Downloads/timeseries-byLocation.json') as file:
-    #        state_data = json.load(file)
-    #    for date in data_dates:
-    #        print(date, state_data[state_str]['dates'][date.strftime('%Y-%-m-%-d')].keys())
-    #    cum_deaths = [state_data[state_str]['dates'][date.strftime('%Y-%-m-%-d')]['deaths_df'] for date in data_dates]
-    #    cum_cases  = [state_data[state_str]['dates'][date.strftime('%Y-%-m-%-d')]['cases_df'] for date in data_dates]
-    #    
-    #else:
-    rows = cases_df['Country/Region'].isin([region])
-    cum_cases = [cases_df[day.strftime('%-m/%-d/%y')][rows].sum() for day in data_dates]
-    if not np.any(rows==True):
-        raise(Exception)
-        
-    rows = deaths_df['Country/Region'].isin([region])
-    cum_deaths = [deaths_df[day.strftime('%-m/%-d/%y')][rows].sum() for day in data_dates]
+    if region in US_state_population.keys():
+        us_states_df = nytimes_data()
+        rows = us_states_df['state'] == region
+        some_dates = list(us_states_df['date'][rows])
+        data_dates = pd.date_range(some_dates[0],some_dates[-1])
+        cum_deaths = list(us_states_df['deaths'][rows])
+        cum_cases = list(us_states_df['cases'][rows])
+    else:
+        cases_df, deaths_df, data_dates = jhu_data()
+        rows = cases_df['Country/Region'].isin([region])
+        cum_cases = [cases_df[day.strftime('%-m/%-d/%y')][rows].sum() for day in data_dates]
+        if not np.any(rows==True):
+            raise(Exception)
+        rows = deaths_df['Country/Region'].isin([region])
+        cum_deaths = [deaths_df[day.strftime('%-m/%-d/%y')][rows].sum() for day in data_dates]
     return data_dates, np.array(cum_cases), np.array(cum_deaths)
 
 population_smallset = {
@@ -261,7 +275,7 @@ population = {
     'Zimbabwe': 14862.927e3
 }
 
-US_state_population = {
+US_state_population = { # Source: https://www2.census.gov/programs-surveys/popest/tables/2010-2019/state/totals/nst-est2019-01.xlsx
     'Alabama': 4903185,
     'Alaska': 731545,
     'Arizona': 7278717,

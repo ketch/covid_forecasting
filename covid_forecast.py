@@ -320,7 +320,7 @@ def compute_and_plot(region='Spain',ifr=0.7,beta=0.25,gamma=0.04,intervention_le
 
     ifr = ifr/100.
 
-    N = data.population[region]
+    N = data.get_population(region)
     data_dates, total_cases, cum_deaths = data.load_time_series(region)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
 
@@ -354,7 +354,8 @@ def write_JSON(regions, forecast_length=14, print_estimates=False):
         intervention_start=0
         intervention_length=30
 
-        N = data.population[region]
+        N = data.get_population(region)
+
         data_dates, total_cases, cum_deaths = data.load_time_series(region)
         data_start = mdates.date2num(data_dates[0])  # First day for which we have data
         if cum_deaths[-1]<50: continue
@@ -383,7 +384,7 @@ def write_JSON(regions, forecast_length=14, print_estimates=False):
         if print_estimates:
             print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q,apparent_R, estimated_immunity))
 
-        from datetime import datetime
+        from datetime import datetime, date
         formatted_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates[mttd+1:]]
 
         output[region] = {}
@@ -395,7 +396,7 @@ def write_JSON(regions, forecast_length=14, print_estimates=False):
         output[region]['intervention effectiveness interval'] = q_interval
         output[region]['estimated immunity'] = estimated_immunity
         
-    with open('forecast.json', 'w') as file:
+    with open('./output/forecast_{}.json'.format(date.today()), 'w') as file:
         json.dump(output, file, cls=NumpyEncoder)
 
 
@@ -405,7 +406,7 @@ def assess_intervention_effectiveness(region, plot_result=False):
     beta = 0.25
     gamma = 0.05
 
-    N = data.population[region]
+    N = data.get_population(region)
     data_dates, total_cases, cum_deaths = data.load_time_series(region)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
 
