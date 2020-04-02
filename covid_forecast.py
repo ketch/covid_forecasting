@@ -18,7 +18,9 @@ General nomenclature:
     - pred = predicted (SIR model output)
 """
 
-# ifr = 0.067
+default_ifr = 0.007
+default_beta=0.27
+default_gamma=0.07
 hr = 10 # Hospitalizations per death
 
 def ttd_dist():
@@ -62,7 +64,7 @@ def get_mttd(daily_deaths):
     return mean-((offset-2*std-window/2))
 
 
-def SIR(u0, beta=0.25, gamma=0.07, N = 1, T=14, q=0, intervention_start=0, intervention_length=0):
+def SIR(u0, beta=default_beta, gamma=default_gamma, N = 1, T=14, q=0, intervention_start=0, intervention_length=0):
     """
     Run the SIR model with initial data u0 and given parameters.
         - q: intervention strength (1=no human contact; 0=normal contact)
@@ -93,7 +95,7 @@ def SIR(u0, beta=0.25, gamma=0.07, N = 1, T=14, q=0, intervention_start=0, inter
     return S, I, R
 
 
-def SIR2(u0, beta=0.25, gamma=0.07, N = 1, T=14, q=[0], intervention_dates=[0,0]):
+def SIR2(u0, beta=default_beta, gamma=default_gamma, N = 1, T=14, q=[0], intervention_dates=[0,0]):
     """
     Run the SIR model with initial data u0 and given parameters.
         - q: list of intervention strengths (1=no human contact; 0=normal contact)
@@ -169,7 +171,7 @@ def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,extended_output=False):
         return u0, mttd, inferred_data_dates
 
 
-def forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=0.25,gamma=0.07,q=0.,intervention_start=0,
+def forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=default_beta,gamma=default_gamma,q=0.,intervention_start=0,
              intervention_length=30,forecast_length=14,death_model='gamma',compute_interval=True):
     """Forecast with SIR model.  All times are in days.
 
@@ -177,8 +179,7 @@ def forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=0.25,gamma=0
          - u0: initial data [S, I, R]
          - lag: difference (in days) between today and simulation start
          - ifr: infection fatality ratio
-         - intervention_level: one of 'No action', 'Limited action', 'Social distancing',
-                'Shelter in place', or 'Full lockdown'.
+         - q: measure of NPI
          - intervention_start: when intervention measure starts, relative to today (can be negative)
          - intervention_length (in days from simulation start)
          - if compute_interval is True, then we simulate with a range of parameter values
@@ -243,15 +244,14 @@ def forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=0.25,gamma=0
         return prediction_dates, pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S_mean
 
 
-def forecast2(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=0.25,gamma=0.07,q=[.0],intervention_dates=[0,30],
+def forecast2(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=default_beta,gamma=default_gamma,q=[.0],intervention_dates=[0,30],
              forecast_length=14,compute_interval=True):
     """Forecast with SIR model, including multiple intervention periods.  All times are in days.
 
         Inputs:
          - ifr: infection fatality ratio
          - lag: difference (in days) between today and simulation start
-         - intervention_level: one of 'No action', 'Limited action', 'Social distancing',
-                'Shelter in place', or 'Full lockdown'.
+         - q: measure of NPI
          - intervention_start: when intervention measure starts, relative to today (can be negative)
          - intervention_length (in days from simulation start)
     """
@@ -344,7 +344,7 @@ def plot_forecast(inferred_data_dates, cum_deaths, lag, prediction_dates, pred_c
     plt.title(plot_title)
 
 
-def compute_and_plot(region='Spain',ifr=0.7,beta=0.25,gamma=0.07,intervention_level='No action',
+def compute_and_plot(region='Spain',ifr=0.7,beta=default_beta,gamma=default_gamma,q=0.,
              intervention_start=0,intervention_length=30,forecast_length=14,scale='linear',
              plot_type='cumulative',plot_value='deaths',plot_past_pred=True,plot_interval=True,
              death_model='gamma'):
@@ -358,14 +358,12 @@ def compute_and_plot(region='Spain',ifr=0.7,beta=0.25,gamma=0.07,intervention_le
     u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
     cum_deaths = np.insert(cum_deaths,0,[0]*mttd)
 
-    q = data.intervention_strength[intervention_level]
-
     prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
       pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
       = forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,q,intervention_start,intervention_length,
                  forecast_length,death_model,plot_interval)
     
-    plot_title = '{} {}-day forecast with {} for {} days'.format(region,forecast_length,intervention_level,intervention_length)
+    plot_title = '{} {}-day forecast with {} for {} days'.format(region,forecast_length,q,intervention_length)
     plot_forecast(inferred_data_dates, cum_deaths, mttd, prediction_dates, pred_cum_deaths, pred_cum_deaths_low,
                   pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high,
                   plot_title, plot_past_pred=plot_past_pred, plot_type=plot_type,
@@ -375,14 +373,13 @@ def compute_and_plot(region='Spain',ifr=0.7,beta=0.25,gamma=0.07,intervention_le
 def write_JSON(regions, forecast_length=14, print_estimates=False):
 
     output = {}
-    ifr = 0.7/100
-    gamma = 0.07
-    beta = 0.25
+    ifr = default_ifr
+    gamma = default_gamma
+    beta = default_beta
 
     for region in regions:
         
         # These should be adjusted for each region:
-        intervention_level='No action'
         intervention_start=0
         intervention_length=30
 
@@ -433,10 +430,10 @@ def write_JSON(regions, forecast_length=14, print_estimates=False):
 
 
 def assess_intervention_effectiveness(region, plot_result=False):
-    ifr = 0.7/100
+    ifr = default_ifr
 
-    beta = 0.25
-    gamma = 0.07
+    beta = default_beta
+    gamma = default_gamma
 
     N = data.get_population(region)
     data_dates, total_cases, cum_deaths = data.load_time_series(region)
