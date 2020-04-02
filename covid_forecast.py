@@ -62,7 +62,7 @@ def get_mttd(daily_deaths):
     return mean-((offset-2*std-window/2))
 
 
-def SIR(u0, beta=0.25, gamma=0.05, N = 1, T=14, q=0, intervention_start=0, intervention_length=0):
+def SIR(u0, beta=0.25, gamma=0.07, N = 1, T=14, q=0, intervention_start=0, intervention_length=0):
     """
     Run the SIR model with initial data u0 and given parameters.
         - q: intervention strength (1=no human contact; 0=normal contact)
@@ -93,7 +93,7 @@ def SIR(u0, beta=0.25, gamma=0.05, N = 1, T=14, q=0, intervention_start=0, inter
     return S, I, R
 
 
-def SIR2(u0, beta=0.25, gamma=0.05, N = 1, T=14, q=[0], intervention_dates=[0,0]):
+def SIR2(u0, beta=0.25, gamma=0.07, N = 1, T=14, q=[0], intervention_dates=[0,0]):
     """
     Run the SIR model with initial data u0 and given parameters.
         - q: list of intervention strengths (1=no human contact; 0=normal contact)
@@ -169,7 +169,7 @@ def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,extended_output=False):
         return u0, mttd, inferred_data_dates
 
 
-def forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=0.25,gamma=0.05,q=0.,intervention_start=0,
+def forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=0.25,gamma=0.07,q=0.,intervention_start=0,
              intervention_length=30,forecast_length=14,death_model='gamma',compute_interval=True):
     """Forecast with SIR model.  All times are in days.
 
@@ -218,20 +218,20 @@ def forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=0.25,gamma=0
         dd_low = np.diff(R_mean); dd_high = np.diff(R_mean)
 
         pred_daily_deaths_low = np.diff(R_mean); pred_daily_deaths_high = np.diff(R_mean)
-        for dbeta in np.linspace(-0.05,0.5,10):
-            for dgamma in np.linspace(-0.02,0.04,10):
-                S, I, R= SIR(u0, beta=beta+dbeta, gamma=gamma+dgamma, N=N, T=lag+forecast_length, q=q,
-                             intervention_start=intervention_start+lag,
-                             intervention_length=intervention_length)
+        for R0 in np.linspace(2,5,10):
+            beta = gamma*R0
+            S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=lag+forecast_length, q=q,
+                         intervention_start=intervention_start+lag,
+                         intervention_length=intervention_length)
 
-                S_low = np.minimum(S_low,S)
-                I_low = np.minimum(I_low,I)
-                R_low = np.minimum(R_low,R)
-                S_high = np.maximum(S_high,S)
-                I_high = np.maximum(I_high,I)
-                R_high = np.maximum(R_high,R)
-                pred_daily_deaths_low = np.minimum(pred_daily_deaths_low,np.diff(R))
-                pred_daily_deaths_high = np.maximum(pred_daily_deaths_high,np.diff(R))
+            S_low = np.minimum(S_low,S)
+            I_low = np.minimum(I_low,I)
+            R_low = np.minimum(R_low,R)
+            S_high = np.maximum(S_high,S)
+            I_high = np.maximum(I_high,I)
+            R_high = np.maximum(R_high,R)
+            pred_daily_deaths_low = np.minimum(pred_daily_deaths_low,np.diff(R))
+            pred_daily_deaths_high = np.maximum(pred_daily_deaths_high,np.diff(R))
      
         pred_cum_deaths_low  = R_low*ifr
         pred_cum_deaths_low = pred_cum_deaths_low - (pred_cum_deaths_low[lag]-cum_deaths[-1])
@@ -243,7 +243,7 @@ def forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=0.25,gamma=0
         return prediction_dates, pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S_mean
 
 
-def forecast2(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=0.25,gamma=0.04,q=[.0],intervention_dates=[0,30],
+def forecast2(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=0.25,gamma=0.07,q=[.0],intervention_dates=[0,30],
              forecast_length=14,compute_interval=True):
     """Forecast with SIR model, including multiple intervention periods.  All times are in days.
 
@@ -344,7 +344,7 @@ def plot_forecast(inferred_data_dates, cum_deaths, lag, prediction_dates, pred_c
     plt.title(plot_title)
 
 
-def compute_and_plot(region='Spain',ifr=0.7,beta=0.25,gamma=0.04,intervention_level='No action',
+def compute_and_plot(region='Spain',ifr=0.7,beta=0.25,gamma=0.07,intervention_level='No action',
              intervention_start=0,intervention_length=30,forecast_length=14,scale='linear',
              plot_type='cumulative',plot_value='deaths',plot_past_pred=True,plot_interval=True,
              death_model='gamma'):
@@ -376,7 +376,7 @@ def write_JSON(regions, forecast_length=14, print_estimates=False):
 
     output = {}
     ifr = 0.7/100
-    gamma = 0.05
+    gamma = 0.07
     beta = 0.25
 
     for region in regions:
@@ -436,7 +436,7 @@ def assess_intervention_effectiveness(region, plot_result=False):
     ifr = 0.7/100
 
     beta = 0.25
-    gamma = 0.05
+    gamma = 0.07
 
     N = data.get_population(region)
     data_dates, total_cases, cum_deaths = data.load_time_series(region)
