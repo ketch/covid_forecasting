@@ -399,7 +399,7 @@ def write_JSON(regions, forecast_length=14, print_estimates=False):
         q = min(q,1)
         apparent_R = max(apparent_R,0)
 
-        intervention_length=forecast_length*2
+        intervention_length=forecast_length*20
         intervention_start = -mttd*2
 
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
