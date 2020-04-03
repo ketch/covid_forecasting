@@ -7,7 +7,7 @@ import matplotlib.dates as mdates
 import data
 import json
 from scipy import optimize
-from utils import NumpyEncoder
+from utils import NumpyEncoder, smooth
 
 """
 Code for modeling and predicting the COVID-19 outbreak.
@@ -453,7 +453,7 @@ def assess_intervention_effectiveness(region, plot_result=False):
                      intervention_start,intervention_length,forecast_length,'gamma',False)
 
         log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-lag:],1.e-1))
-        residual = np.linalg.norm(np.log(np.maximum(np.diff(pred_cum_deaths),1.e-1))-log_daily_deaths)
+        residual = np.linalg.norm(np.log(np.maximum(np.diff(pred_cum_deaths),1.e-0))-smooth(log_daily_deaths))
         return residual
 
     q = optimize.fsolve(fit_q,0.,epsfcn=0.01)[0]

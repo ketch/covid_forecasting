@@ -29,8 +29,8 @@ def jhu_data(remote=False):
         url = "/Users/ketch/Research/Projects/covid-data-sources/JHU_data/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
         # Check that file has been updated today
         timestamp = os.path.getmtime(url)
-        if (time.time()-timestamp)/3600 > 12:
-            print('Warning: data file is more than 12 hours old.  Please update.')
+        if (time.time()-timestamp)/3600 > 18:
+            print('Warning: data file is more than 18 hours old.  Please update.')
 
     cases_df = pd.read_csv(url)
     # No more recovered data:
@@ -52,8 +52,8 @@ def nytimes_data(remote=False):
         url = "/Users/ketch/Research/Projects/covid-data-sources/nytimes_data/us-states.csv"
         # Check that file has been updated today
         timestamp = os.path.getmtime(url)
-        if (time.time()-timestamp)/3600 > 12:
-            print('Warning: data file is more than 12 hours old.  Please update.')
+        if (time.time()-timestamp)/3600 > 18:
+            print('Warning: data file is more than 18 hours old.  Please update.')
         return pd.read_csv(url)        
 
 
