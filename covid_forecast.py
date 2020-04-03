@@ -309,29 +309,30 @@ def plot_forecast(inferred_data_dates, cum_deaths, lag, prediction_dates, pred_c
     else:
         plotfun = plt.semilogy
         
-    if plot_past_pred: pred_start_ind=0
-    else: pred_start_ind = lag
+    pred_start_ind=0
+    #if plot_past_pred: pred_start_ind=0
+    #else: pred_start_ind = lag
 
     if plot_type=='cumulative':
         if plot_value == 'deaths':
             plotfun(inferred_data_dates,cum_deaths,'-',lw=3,label='Deaths (recorded)')
             plotfun(prediction_dates[pred_start_ind:],pred_cum_deaths[pred_start_ind:],'-k',label='Deaths (predicted)')
             if plot_interval:
-                plt.fill_between(prediction_dates[lag:],pred_cum_deaths_low[lag:],pred_cum_deaths_high[lag:],color='grey',zorder=-1)
+                plt.fill_between(prediction_dates,pred_cum_deaths_low,pred_cum_deaths_high,color='grey',zorder=-1)
         elif plot_value == 'hospitalizations':
-            plotfun(prediction_dates[lag:],pred_cum_deaths[lag:]*hr,'-k',label='Hospitalizations (predicted)')
+            plotfun(prediction_dates,pred_cum_deaths*hr,'-k',label='Hospitalizations (predicted)')
             if plot_interval:
-                plt.fill_between(prediction_dates[lag:],pred_cum_deaths_low[lag:]*hr,pred_cum_deaths_high[lag:]*hr,color='grey',zorder=-1)
+                plt.fill_between(prediction_dates,pred_cum_deaths_low*hr,pred_cum_deaths_high*hr,color='grey',zorder=-1)
     elif plot_type=='daily':
         if plot_value == 'deaths':
             plotfun(inferred_data_dates[1:],np.diff(cum_deaths),'-',lw=3,label='Deaths (recorded)')
             plotfun(prediction_dates[pred_start_ind+1:],np.diff(pred_cum_deaths[pred_start_ind:]),'-k',label='Deaths (predicted)')
             if plot_interval:
-                plt.fill_between(prediction_dates[lag+1:],pred_daily_deaths_low[lag:],pred_daily_deaths_high[lag:],color='grey',zorder=-1)
+                plt.fill_between(prediction_dates[1:],pred_daily_deaths_low,pred_daily_deaths_high,color='grey',zorder=-1)
         elif plot_value == 'hospitalizations':
-            plotfun(prediction_dates[lag+1:],np.diff(pred_cum_deaths[lag:])*hr,'-k',label='Hospitalizations (predicted)')
+            plotfun(prediction_dates[1:],np.diff(pred_cum_deaths)*hr,'-k',label='Hospitalizations (predicted)')
             if plot_interval:
-                plt.fill_between(prediction_dates[lag+1:],pred_daily_deaths_low[lag:]*hr,pred_daily_deaths_high[lag:]*hr,color='grey',zorder=-1)
+                plt.fill_between(prediction_dates[1:],pred_daily_deaths_low*hr,pred_daily_deaths_high*hr,color='grey',zorder=-1)
 
     plt.legend(loc='best')
 
@@ -358,9 +359,22 @@ def compute_and_plot(region='Spain',ifr=0.7,beta=default_beta,gamma=default_gamm
     u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
     cum_deaths = np.insert(cum_deaths,0,[0]*mttd)
 
+    q_past, q_interval = assess_intervention_effectiveness(region)
+
+    # Integrate over q_interval (in past) to get initial data
+    S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=q_interval, q=q_past, intervention_start=0,
+                 intervention_length=q_interval*2)
+
+    u0 = np.array([S[-1],I[-1],R[-1]])
+
+    # Now do the actual prediction
+    # We'll want to allow a different q value here
+    intervention_length=forecast_length*2
+    intervention_start = 0
+
     prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
       pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
-      = forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,q,intervention_start,intervention_length,
+      = forecast(u0,0,N,[inferred_data_dates[-1]],cum_deaths,ifr,beta,gamma,q,intervention_start,intervention_length,
                  forecast_length,death_model,plot_interval)
     
     plot_title = '{} {}-day forecast with {} for {} days'.format(region,forecast_length,q,intervention_length)
@@ -395,20 +409,26 @@ def write_JSON(regions, forecast_length=14, print_estimates=False):
         q, q_interval = assess_intervention_effectiveness(region)
 
         apparent_R = (1-q)*beta/gamma
-
-        q = min(q,1)
         apparent_R = max(apparent_R,0)
 
-        intervention_length=forecast_length*20
-        intervention_start = -mttd*2
+        # Integrate over q_interval (in past) to get initial data
+        S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=q_interval, q=q, intervention_start=0,
+                     intervention_length=q_interval*2)
+
+        u0 = np.array([S[-1],I[-1],R[-1]])
+        estimated_immunity = (N-S[-1])/N
+
+        # Now do the actual prediction
+        # We'll want to allow a different q value here
+        intervention_length=forecast_length*2
+        intervention_start = 0
 
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, \
-          S = forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,
+          S = forecast(u0,0,N,[inferred_data_dates[-1]],cum_deaths,ifr,beta,gamma,
                      q,intervention_start,intervention_length,forecast_length,'gamma',compute_interval=True)
         
         pred_daily_deaths = np.diff(pred_cum_deaths);
-        estimated_immunity = (N-S[mttd])/N
 
         if print_estimates:
             print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q,apparent_R, estimated_immunity))
@@ -452,11 +472,12 @@ def assess_intervention_effectiveness(region, plot_result=False):
           = forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,q,
                      intervention_start,intervention_length,forecast_length,'gamma',False)
 
-        log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-lag:],1.e-1))
-        residual = np.linalg.norm(np.log(np.maximum(np.diff(pred_cum_deaths),1.e-0))-smooth(log_daily_deaths))
+        log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-lag:],1.e-0))
+        residual = np.linalg.norm(np.arange(lag)*(np.log(np.diff(pred_cum_deaths))-smooth(log_daily_deaths)))
         return residual
 
     q = optimize.fsolve(fit_q,0.,epsfcn=0.01)[0]
+    q = max(min(q,1),0)
 
     if plot_result:
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
