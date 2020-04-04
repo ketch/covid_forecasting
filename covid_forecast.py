@@ -394,9 +394,6 @@ def write_JSON(regions, forecast_length=14, print_estimates=False):
     for region in regions:
         
         # These should be adjusted for each region:
-        intervention_start=0
-        intervention_length=30
-
         N = data.get_population(region)
 
         data_dates, total_cases, cum_deaths = data.load_time_series(region)
@@ -406,13 +403,13 @@ def write_JSON(regions, forecast_length=14, print_estimates=False):
         u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
         cum_deaths = np.insert(cum_deaths,0,[0]*mttd)
 
-        q, q_interval = assess_intervention_effectiveness(region)
+        q_past, q_interval = assess_intervention_effectiveness(region)
 
-        apparent_R = (1-q)*beta/gamma
+        apparent_R = (1-q_past)*beta/gamma
         apparent_R = max(apparent_R,0)
 
         # Integrate over q_interval (in past) to get initial data
-        S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=q_interval, q=q, intervention_start=0,
+        S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=q_interval, q=q_past, intervention_start=0,
                      intervention_length=q_interval*2)
 
         u0 = np.array([S[-1],I[-1],R[-1]])
@@ -420,6 +417,7 @@ def write_JSON(regions, forecast_length=14, print_estimates=False):
 
         # Now do the actual prediction
         # We'll want to allow a different q value here
+        q = q_past
         intervention_length=forecast_length*2
         intervention_start = 0
 
@@ -434,13 +432,13 @@ def write_JSON(regions, forecast_length=14, print_estimates=False):
             print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q,apparent_R, estimated_immunity))
 
         from datetime import datetime, date
-        formatted_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates[mttd+1:]]
+        formatted_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates[1:]]
 
         output[region] = {}
         output[region]['dates'] = formatted_dates
-        output[region]['deaths'] = pred_daily_deaths[mttd:]
-        output[region]['deaths_low'] = pred_daily_deaths_low[mttd:]
-        output[region]['deaths_high'] = pred_daily_deaths_high[mttd:]
+        output[region]['deaths'] = pred_daily_deaths
+        output[region]['deaths_low'] = pred_daily_deaths_low
+        output[region]['deaths_high'] = pred_daily_deaths_high
         output[region]['intervention effectiveness'] = q
         output[region]['intervention effectiveness interval'] = q_interval
         output[region]['estimated immunity'] = estimated_immunity
