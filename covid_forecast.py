@@ -384,7 +384,7 @@ def compute_and_plot(region='Spain',ifr=0.7,beta=default_beta,gamma=default_gamm
                   plot_interval=plot_interval, plot_value=plot_value, scale=scale)
 
 
-def write_JSON(regions, forecast_length=14, print_estimates=False):
+def write_JSON(regions, forecast_length=200, print_estimates=False):
 
     output = {}
     ifr = default_ifr
