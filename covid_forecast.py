@@ -8,6 +8,7 @@ import data
 import json
 from scipy import optimize
 from utils import NumpyEncoder, smooth
+from datetime import datetime, date
 
 """
 Code for modeling and predicting the COVID-19 outbreak.
@@ -384,21 +385,12 @@ def compute_and_plot(region='Spain',ifr=0.7,beta=default_beta,gamma=default_gamm
                   plot_interval=plot_interval, plot_value=plot_value, scale=scale)
 
 
-def write_JSON(regions, forecast_length=200, print_estimates=False):
-
-    output = {}
-    ifr = default_ifr
-    gamma = default_gamma
-    beta = default_beta
-
-    for region in regions:
-        
+def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200):
         # These should be adjusted for each region:
         N = data.get_population(region)
 
-        data_dates, total_cases, cum_deaths = data.load_time_series(region)
+        data_dates, cum_cases, cum_deaths = data.load_time_series(region)
         data_start = mdates.date2num(data_dates[0])  # First day for which we have data
-        if cum_deaths[-1]<50: continue
 
         u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
         cum_deaths = np.insert(cum_deaths,0,[0]*mttd)
@@ -417,21 +409,40 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
 
         # Now do the actual prediction
         # We'll want to allow a different q value here
-        q = q_past
         intervention_length=forecast_length*2
         intervention_start = 0
 
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, \
           S = forecast(u0,0,N,[inferred_data_dates[-1]],cum_deaths,ifr,beta,gamma,
-                     q,intervention_start,intervention_length,forecast_length,'gamma',compute_interval=True)
+                     q_past,intervention_start,intervention_length,forecast_length,'gamma',compute_interval=True)
         
         pred_daily_deaths = np.diff(pred_cum_deaths);
 
-        if print_estimates:
-            print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q,apparent_R, estimated_immunity))
+        return prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, q_past,  \
+                estimated_immunity, apparent_R, q_interval
 
-        from datetime import datetime, date
+
+def write_JSON(regions, forecast_length=200, print_estimates=False):
+
+    output = {}
+    ifr = default_ifr
+    gamma = default_gamma
+    beta = default_beta
+
+    for region in regions:
+
+        data_dates, cum_cases, cum_deaths = data.load_time_series(region)
+        if cum_deaths[-1]<50: continue
+
+        prediction_dates, pred_daily_deaths, pred_daily_deaths_low, \
+            pred_daily_deaths_high, q_past, estimated_immunity, apparent_R, q_interval = \
+            fit_q_and_forecast(region,beta,gamma,ifr,forecast_length)
+
+
+        if print_estimates:
+            print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q_past,apparent_R, estimated_immunity))
+
         formatted_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates[1:]]
 
         output[region] = {}
@@ -439,7 +450,7 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         output[region]['deaths'] = pred_daily_deaths
         output[region]['deaths_low'] = pred_daily_deaths_low
         output[region]['deaths_high'] = pred_daily_deaths_high
-        output[region]['intervention effectiveness'] = q
+        output[region]['intervention effectiveness'] = q_past
         output[region]['intervention effectiveness interval'] = q_interval
         output[region]['estimated immunity'] = estimated_immunity
         
