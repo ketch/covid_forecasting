@@ -385,7 +385,7 @@ def compute_and_plot(region='Spain',ifr=0.7,beta=default_beta,gamma=default_gamm
                   plot_interval=plot_interval, plot_value=plot_value, scale=scale)
 
 
-def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200):
+def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200,set_q=None,int_len=None):
         # These should be adjusted for each region:
         N = data.get_population(region)
 
@@ -405,22 +405,28 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200
                      intervention_length=q_interval*2)
 
         u0 = np.array([S[-1],I[-1],R[-1]])
-        estimated_immunity = (N-S[-1])/N
 
         # Now do the actual prediction
-        # We'll want to allow a different q value here
-        intervention_length=forecast_length*2
+        if set_q:
+            q = set_q
+        else:
+            q = q_past
+        if int_len:
+            intervention_length=int_len
+        else:
+            intervention_length=forecast_length*2
         intervention_start = 0
 
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, \
           S = forecast(u0,0,N,[inferred_data_dates[-1]],cum_deaths,ifr,beta,gamma,
-                     q_past,intervention_start,intervention_length,forecast_length,'gamma',compute_interval=True)
+                     q,intervention_start,intervention_length,forecast_length,'gamma',compute_interval=True)
         
         pred_daily_deaths = np.diff(pred_cum_deaths);
+        immune_fraction = (N-S)/N
 
-        return prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, q_past,  \
-                estimated_immunity, apparent_R, q_interval
+        return prediction_dates[1:], pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, q_past,  \
+                immune_fraction, apparent_R, q_interval
 
 
 def write_JSON(regions, forecast_length=200, print_estimates=False):
@@ -436,14 +442,15 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         if cum_deaths[-1]<50: continue
 
         prediction_dates, pred_daily_deaths, pred_daily_deaths_low, \
-            pred_daily_deaths_high, q_past, estimated_immunity, apparent_R, q_interval = \
+            pred_daily_deaths_high, q_past, immune_fraction, apparent_R, q_interval = \
             fit_q_and_forecast(region,beta,gamma,ifr,forecast_length)
 
-
+        N = data.get_population(region)
+        estimated_immunity = (N-immune_fraction[0])/N
         if print_estimates:
             print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q_past,apparent_R, estimated_immunity))
 
-        formatted_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates[1:]]
+        formatted_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates]
 
         output[region] = {}
         output[region]['dates'] = formatted_dates
