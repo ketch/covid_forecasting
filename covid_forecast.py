@@ -19,7 +19,7 @@ General nomenclature:
     - pred = predicted (SIR model output)
 """
 
-default_ifr = 0.007
+default_ifr = 0.006
 default_beta=0.27
 default_gamma=0.07
 hr = 10 # Hospitalizations per death
@@ -76,12 +76,14 @@ def SIR(u0, beta=default_beta, gamma=default_gamma, N = 1, T=14, q=0, interventi
     """
 
     du = np.zeros(3)
-    
     def f(t,u):
-        if intervention_start<t<intervention_start+intervention_length:
-            qq = q
+        if callable(q):
+            qq = q(t)
         else:
-            qq = 0.
+            if intervention_start<t<intervention_start+intervention_length:
+                qq = q
+            else:
+                qq = 0.
         du[0] = -(1-qq)*beta*u[1]*u[0]/N
         du[1] = (1-qq)*beta*u[1]*u[0]/N - gamma*u[1]
         du[2] = gamma*u[1]
@@ -301,7 +303,7 @@ def forecast2(u0,lag,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=default_bet
 
 
 def plot_forecast(inferred_data_dates, cum_deaths, lag, prediction_dates, pred_cum_deaths, pred_cum_deaths_low,
-                  pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, plot_title,
+                  pred_cum_deaths_high, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, plot_title,
                   plot_past_pred=True, plot_type='cumulative',
                   plot_interval=True, plot_value='deaths',scale='linear'):
 
@@ -310,14 +312,10 @@ def plot_forecast(inferred_data_dates, cum_deaths, lag, prediction_dates, pred_c
     else:
         plotfun = plt.semilogy
         
-    pred_start_ind=0
-    #if plot_past_pred: pred_start_ind=0
-    #else: pred_start_ind = lag
-
     if plot_type=='cumulative':
         if plot_value == 'deaths':
             plotfun(inferred_data_dates,cum_deaths,'-',lw=3,label='Deaths (recorded)')
-            plotfun(prediction_dates[pred_start_ind:],pred_cum_deaths[pred_start_ind:],'-k',label='Deaths (predicted)')
+            plotfun(prediction_dates,pred_cum_deaths,'-k',label='Deaths (predicted)')
             if plot_interval:
                 plt.fill_between(prediction_dates,pred_cum_deaths_low,pred_cum_deaths_high,color='grey',zorder=-1)
         elif plot_value == 'hospitalizations':
@@ -327,13 +325,13 @@ def plot_forecast(inferred_data_dates, cum_deaths, lag, prediction_dates, pred_c
     elif plot_type=='daily':
         if plot_value == 'deaths':
             plotfun(inferred_data_dates[1:],np.diff(cum_deaths),'-',lw=3,label='Deaths (recorded)')
-            plotfun(prediction_dates[pred_start_ind+1:],np.diff(pred_cum_deaths[pred_start_ind:]),'-k',label='Deaths (predicted)')
+            plotfun(prediction_dates,pred_daily_deaths,'-k',label='Deaths (predicted)')
             if plot_interval:
-                plt.fill_between(prediction_dates[1:],pred_daily_deaths_low,pred_daily_deaths_high,color='grey',zorder=-1)
+                plt.fill_between(prediction_dates,pred_daily_deaths_low,pred_daily_deaths_high,color='grey',zorder=-1)
         elif plot_value == 'hospitalizations':
-            plotfun(prediction_dates[1:],np.diff(pred_cum_deaths)*hr,'-k',label='Hospitalizations (predicted)')
+            plotfun(prediction_dates,pred_daily_deaths*hr,'-k',label='Hospitalizations (predicted)')
             if plot_interval:
-                plt.fill_between(prediction_dates[1:],pred_daily_deaths_low*hr,pred_daily_deaths_high*hr,color='grey',zorder=-1)
+                plt.fill_between(prediction_dates,pred_daily_deaths_low*hr,pred_daily_deaths_high*hr,color='grey',zorder=-1)
 
     plt.legend(loc='best')
 
@@ -346,12 +344,11 @@ def plot_forecast(inferred_data_dates, cum_deaths, lag, prediction_dates, pred_c
     plt.title(plot_title)
 
 
-def compute_and_plot(region='Spain',ifr=0.7,beta=default_beta,gamma=default_gamma,q=0.,
+def compute_and_plot(region='Spain',ifr=0.007,beta=default_beta,gamma=default_gamma,q=0.,
              intervention_start=0,intervention_length=30,forecast_length=14,scale='linear',
              plot_type='cumulative',plot_value='deaths',plot_past_pred=True,plot_interval=True,
-             death_model='gamma'):
-
-    ifr = ifr/100.
+             death_model='gamma',estimate_q=False):
+    "Shows both past and future."
 
     N = data.get_population(region)
     data_dates, total_cases, cum_deaths = data.load_time_series(region)
@@ -360,7 +357,51 @@ def compute_and_plot(region='Spain',ifr=0.7,beta=default_beta,gamma=default_gamm
     u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
     cum_deaths = np.insert(cum_deaths,0,[0]*mttd)
 
+    prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
+        pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, \
+        q_past, immune_fraction, apparent_R, q_interval = \
+        fit_q_and_forecast(region,beta,gamma,ifr,forecast_length,set_q=q)
+
+    plot_title = '{} {}-day forecast with {} for {} days'.format(region,forecast_length,q_past,intervention_length)
+    plot_forecast(inferred_data_dates, cum_deaths, mttd, prediction_dates, pred_cum_deaths, pred_cum_deaths_low,
+                  pred_cum_deaths_high, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high,
+                  plot_title, plot_past_pred=plot_past_pred, plot_type=plot_type,
+                  plot_interval=plot_interval, plot_value=plot_value, scale=scale)
+
+
+
+def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200,set_q=None,int_len=None):
+    """
+    Determine an intervention factor (possibly time-dependent) that explains the recent data,
+    and then use that to forecast into the future.
+
+    Inputs:
+        - set_q:  If 'estimated', use known intervention data.  If 'fitted', fit q to the recent data.
+                  If a value or function is given, use that directly.
+    """
+    # These should be adjusted for each region:
+    N = data.get_population(region)
+
+    data_dates, cum_cases, cum_deaths = data.load_time_series(region)
+    data_start = mdates.date2num(data_dates[0])  # First day for which we have data
+
+    u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
+    cum_deaths = np.insert(cum_deaths,0,[0]*mttd)
+
+    
     q_past, q_interval = assess_intervention_effectiveness(region)
+    if set_q == 'estimated':
+        q_past = data.estimated_intervention(region)
+    if (type(set_q) == float) or callable(set_q):
+        q_past = set_q
+
+    if callable(q_past):
+        q_current = q_past(mttd)
+    else:
+        q_current = q_past
+
+    apparent_R = (1-q_current)*beta/gamma
+    apparent_R = max(apparent_R,0)
 
     # Integrate over q_interval (in past) to get initial data
     S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=q_interval, q=q_past, intervention_start=0,
@@ -368,65 +409,23 @@ def compute_and_plot(region='Spain',ifr=0.7,beta=default_beta,gamma=default_gamm
 
     u0 = np.array([S[-1],I[-1],R[-1]])
 
-    # Now do the actual prediction
-    # We'll want to allow a different q value here
-    intervention_length=forecast_length*2
+    if int_len:
+        intervention_length=int_len
+    else:
+        intervention_length=forecast_length*2
     intervention_start = 0
 
     prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
-      pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
-      = forecast(u0,0,N,[inferred_data_dates[-1]],cum_deaths,ifr,beta,gamma,q,intervention_start,intervention_length,
-                 forecast_length,death_model,plot_interval)
+      pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, \
+      S = forecast(u0,0,N,[inferred_data_dates[-1]],cum_deaths,ifr,beta,gamma,
+                 q_current,intervention_start,intervention_length,forecast_length,'gamma',compute_interval=True)
     
-    plot_title = '{} {}-day forecast with {} for {} days'.format(region,forecast_length,q,intervention_length)
-    plot_forecast(inferred_data_dates, cum_deaths, mttd, prediction_dates, pred_cum_deaths, pred_cum_deaths_low,
-                  pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high,
-                  plot_title, plot_past_pred=plot_past_pred, plot_type=plot_type,
-                  plot_interval=plot_interval, plot_value=plot_value, scale=scale)
+    pred_daily_deaths = np.diff(pred_cum_deaths);
+    immune_fraction = (N-S)/N
 
-
-def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200,set_q=None,int_len=None):
-        # These should be adjusted for each region:
-        N = data.get_population(region)
-
-        data_dates, cum_cases, cum_deaths = data.load_time_series(region)
-        data_start = mdates.date2num(data_dates[0])  # First day for which we have data
-
-        u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
-        cum_deaths = np.insert(cum_deaths,0,[0]*mttd)
-
-        q_past, q_interval = assess_intervention_effectiveness(region)
-
-        apparent_R = (1-q_past)*beta/gamma
-        apparent_R = max(apparent_R,0)
-
-        # Integrate over q_interval (in past) to get initial data
-        S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=q_interval, q=q_past, intervention_start=0,
-                     intervention_length=q_interval*2)
-
-        u0 = np.array([S[-1],I[-1],R[-1]])
-
-        # Now do the actual prediction
-        if set_q:
-            q = set_q
-        else:
-            q = q_past
-        if int_len:
-            intervention_length=int_len
-        else:
-            intervention_length=forecast_length*2
-        intervention_start = 0
-
-        prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
-          pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, \
-          S = forecast(u0,0,N,[inferred_data_dates[-1]],cum_deaths,ifr,beta,gamma,
-                     q,intervention_start,intervention_length,forecast_length,'gamma',compute_interval=True)
-        
-        pred_daily_deaths = np.diff(pred_cum_deaths);
-        immune_fraction = (N-S)/N
-
-        return prediction_dates[1:], pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, q_past,  \
-                immune_fraction, apparent_R, q_interval
+    return prediction_dates[1:], pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
+            pred_cum_deaths[1:], pred_cum_deaths_low[1:], pred_cum_deaths_high[1:], \
+            q_current, immune_fraction, apparent_R, q_interval
 
 
 def write_JSON(regions, forecast_length=200, print_estimates=False):
@@ -441,14 +440,17 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         data_dates, cum_cases, cum_deaths = data.load_time_series(region)
         if cum_deaths[-1]<50: continue
 
-        prediction_dates, pred_daily_deaths, pred_daily_deaths_low, \
-            pred_daily_deaths_high, q_past, immune_fraction, apparent_R, q_interval = \
+
+        prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
+            pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, \
+            q_past, immune_fraction, apparent_R, q_interval = \
             fit_q_and_forecast(region,beta,gamma,ifr,forecast_length)
 
+        q_est = data.estimated_intervention(region)
         N = data.get_population(region)
-        estimated_immunity = (N-immune_fraction[0])/N
+        estimated_immunity = immune_fraction[0]
         if print_estimates:
-            print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q_past,apparent_R, estimated_immunity))
+            print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q_past,q_est, estimated_immunity))
 
         formatted_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates]
 
@@ -482,29 +484,48 @@ def assess_intervention_effectiveness(region, plot_result=False):
     intervention_length=lag
     forecast_length=0
 
+    def fit_q_linear(v):
+        "Fit a linearly-varying (in time) intervention factor to the recent data."
+        q0 = v[0]
+        slope = v[1]
+        penalty = 100
+        qfun = lambda t: q0+slope*t
+        prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
+          pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
+          = forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,qfun,
+                     intervention_start,intervention_length,forecast_length,'gamma',False)
+        log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-lag:],1.e0))
+        endval = qfun(lag)
+        residual = np.linalg.norm(np.arange(lag)*(np.log(np.diff(pred_cum_deaths)) \
+                    - smooth(log_daily_deaths))) + 65*abs(v[1]) + penalty*(max(0,endval-1) - min(0,endval))
+        return residual
+
     def fit_q(q):
+        "Fit a constant (in time) intervention factor to the recent data."
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
           = forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,q,
                      intervention_start,intervention_length,forecast_length,'gamma',False)
 
         log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-lag:],1.e-0))
-        residual = np.linalg.norm(np.arange(lag)*(np.log(np.diff(pred_cum_deaths))-smooth(log_daily_deaths)))
+        residual = np.linalg.norm(np.arange(lag)**2*(np.log(np.diff(pred_cum_deaths))-smooth(log_daily_deaths)))
         return residual
 
-    q = optimize.fsolve(fit_q,0.,epsfcn=0.01)[0]
-    q = max(min(q,1),0)
+    bounds = ((0.,1.),(-0.1,0.1))
+    result = optimize.minimize(fit_q_linear,[0.,0.],bounds=bounds)
+    qfun = lambda t: result.x[0] + t*result.x[1]
+    #q = optimize.fsolve(fit_q,0.,epsfcn=0.01)[0]
 
     if plot_result:
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high \
-          = forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,q,
+          = forecast(u0,lag,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,qfun,
                      intervention_start,intervention_length,forecast_length,'gamma',False)
 
         plt.semilogy(prediction_dates[1:],np.diff(pred_cum_deaths))
         plt.semilogy(prediction_dates[1:],np.diff(cum_deaths[-lag-1:]))
 
-    return q, lag
+    return qfun, lag
 
 if __name__ == '__main__':
 

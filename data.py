@@ -57,6 +57,21 @@ def nytimes_data(remote=False):
         return pd.read_csv(url)        
 
 
+def estimated_intervention(region):
+    "Estimate intervention factor based on currently implemented interventions."
+    file = "./InterventionsImplemented.csv"
+    interventions_df = pd.read_csv(file)
+    rows = interventions_df['CountryName'] == region
+
+    q1 = 1.
+    for measure in ['mandatorylockdown','publiceventsbanned','schoolsclosed']:
+        if np.any(interventions_df[measure][rows]):
+            q1 = q1*intervention_effects[measure]
+    for measure in ['socialdistancing','quarantinepositives']:
+        # Assume social distancing and positive case quarantine everywhere?
+        q1 = q1*intervention_effects[measure]
+    return 1-q1
+
 def load_time_series(region):
     """
     Fetch data and parse to get time series of confirmed cases and deaths.
@@ -105,6 +120,14 @@ intervention_strength = {
     'Social distancing': 0.35,
     'Shelter in place': 0.6,
     'Full lockdown': 0.85
+}
+
+intervention_effects = {
+    'mandatorylockdown' : 0.5,
+    'publiceventsbanned': 0.9,
+    'schoolsclosed': 0.8,
+    'socialdistancing': 0.9,
+    'quarantinepositives': 0.9,
 }
 
 # Values below are taken from https://population.un.org/wpp/Download/Standard/CSV/.
