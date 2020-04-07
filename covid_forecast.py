@@ -359,7 +359,7 @@ def compute_and_plot(region='Spain',ifr=0.007,beta=default_beta,gamma=default_ga
 
     prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
         pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, \
-        q_past, immune_fraction, apparent_R, q_interval = \
+        q_past, immune_fraction, apparent_R, q_interval, pred_daily_new_infections = \
         fit_q_and_forecast(region,beta,gamma,ifr,forecast_length,set_q=q)
 
     plot_title = '{} {}-day forecast with {} for {} days'.format(region,forecast_length,q_past,intervention_length)
@@ -420,12 +420,13 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200
       S = forecast(u0,0,N,[inferred_data_dates[-1]],cum_deaths,ifr,beta,gamma,
                  q_current,intervention_start,intervention_length,forecast_length,'gamma',compute_interval=True)
     
+    pred_daily_new_infections = - np.diff(S)
     pred_daily_deaths = np.diff(pred_cum_deaths);
     immune_fraction = (N-S)/N
 
     return prediction_dates[1:], pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
             pred_cum_deaths[1:], pred_cum_deaths_low[1:], pred_cum_deaths_high[1:], \
-            q_current, immune_fraction, apparent_R, q_interval
+            q_current, immune_fraction, apparent_R, q_interval, pred_daily_new_infections
 
 
 def write_JSON(regions, forecast_length=200, print_estimates=False):
@@ -443,19 +444,24 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
 
         prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
             pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, \
-            q_past, immune_fraction, apparent_R, q_interval = \
+            q_past, immune_fraction, apparent_R, q_interval, pred_daily_new_infections = \
             fit_q_and_forecast(region,beta,gamma,ifr,forecast_length)
 
-        q_est = data.estimated_intervention(region)
+        #q_est = data.estimated_intervention(region)
+        q1, lag = assess_intervention_effectiveness(region,fit_type='linear')
+        q2, lag = assess_intervention_effectiveness(region,fit_type='constant')
+        q1 = max(0,min(1,q1(lag))); q2 = max(0,min(1,q2(lag)))
+
         N = data.get_population(region)
         estimated_immunity = immune_fraction[0]
         if print_estimates:
-            print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q_past,q_est, estimated_immunity))
+            print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q1,q2, estimated_immunity))
 
         formatted_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates]
 
         output[region] = {}
         output[region]['dates'] = formatted_dates
+        output[region]['new infections'] = pred_daily_new_infections
         output[region]['deaths'] = pred_daily_deaths
         output[region]['deaths_low'] = pred_daily_deaths_low
         output[region]['deaths_high'] = pred_daily_deaths_high
@@ -467,7 +473,7 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         json.dump(output, file, cls=NumpyEncoder)
 
 
-def assess_intervention_effectiveness(region, plot_result=False):
+def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=65, fit_type='linear'):
     ifr = default_ifr
 
     beta = default_beta
@@ -497,10 +503,10 @@ def assess_intervention_effectiveness(region, plot_result=False):
         log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-lag:],1.e0))
         endval = qfun(lag)
         residual = np.linalg.norm(np.arange(lag)*(np.log(np.diff(pred_cum_deaths)) \
-                    - smooth(log_daily_deaths))) + 65*abs(v[1]) + penalty*(max(0,endval-1) - min(0,endval))
+                    - smooth(log_daily_deaths))) + slope_penalty*abs(v[1]) + penalty*(max(0,endval-1) - min(0,endval))
         return residual
 
-    def fit_q(q):
+    def fit_q_constant(q):
         "Fit a constant (in time) intervention factor to the recent data."
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
@@ -511,10 +517,13 @@ def assess_intervention_effectiveness(region, plot_result=False):
         residual = np.linalg.norm(np.arange(lag)**2*(np.log(np.diff(pred_cum_deaths))-smooth(log_daily_deaths)))
         return residual
 
-    bounds = ((0.,1.),(-0.1,0.1))
-    result = optimize.minimize(fit_q_linear,[0.,0.],bounds=bounds)
-    qfun = lambda t: result.x[0] + t*result.x[1]
-    #q = optimize.fsolve(fit_q,0.,epsfcn=0.01)[0]
+    if fit_type == 'linear':
+        bounds = ((0.,1.),(-0.1,0.1))
+        result = optimize.minimize(fit_q_linear,[0.,0.],bounds=bounds,method='slsqp')
+        qfun = lambda t: result.x[0] + t*result.x[1]
+    elif fit_type == 'constant':
+        q = optimize.fsolve(fit_q_constant,0.,epsfcn=0.01)[0]
+        qfun = lambda t: q
 
     if plot_result:
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
