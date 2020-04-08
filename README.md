@@ -3,7 +3,7 @@ based on historical numbers of deaths, for a given population (typically a
 country or state).  Parameters mentioned below are based on numbers from the
 literature; see https://github.com/ketch/covid-blog-posts/wiki/Literature.
 
-The methodology includes the following steps:
+# Methodology
 
 1. Based on recorded numbers of deaths for the specified region, infer
    the number of newly infected individuals for each day in the past,
@@ -39,3 +39,8 @@ The methodology includes the following steps:
 3. Using the output of the above model at the present day, and the estimated
    intervention parameter q, the SIR model is again solved forward in time
    to predict future death rates.
+
+# Data sources
+
+- For countries: https://github.com/CSSEGISandData/COVID-19/blob/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv
+- For US states: https://github.com/nytimes/covid-19-data/blob/master/us-states.csv
