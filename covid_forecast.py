@@ -38,7 +38,8 @@ def ttd_dist():
     return p
 
 def itod_matrix(n):
-    p = ttd_dist()
+    p = np.loadtxt('ttd_dist.txt')
+    #p = ttd_dist()
     col = np.zeros(n); col[:len(p)]=np.flip(p)
     row = np.zeros(n); row[0]=p[-1]
     return linalg.toeplitz(col,row)
@@ -177,7 +178,7 @@ def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,extended_output=False):
 
 
 def forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=default_beta,gamma=default_gamma,q=0.,intervention_start=0,
-             intervention_length=30,forecast_length=14,death_model='gamma',compute_interval=True):
+             intervention_length=30,forecast_length=14,death_model='gamma',compute_interval=False):
     """Forecast with SIR model.  All times are in days.
 
         Inputs:
@@ -219,13 +220,13 @@ def forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=default_bet
         return prediction_dates, pred_cum_deaths, None, None, None, None, S_mean
 
     else:
+        qmin, qmax = compute_interval
         S_low, I_low, R_low = S_mean.copy(), I_mean.copy(), R_mean.copy()
         S_high, I_high, R_high = S_mean.copy(), I_mean.copy(), R_mean.copy()
         dd_low = np.diff(R_mean); dd_high = np.diff(R_mean)
 
         pred_daily_deaths_low = np.diff(R_mean); pred_daily_deaths_high = np.diff(R_mean)
-        for R0 in np.linspace(2,5,10):
-            beta = gamma*R0
+        for q in np.linspace(qmin,qmax,10):
             S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=mttd+forecast_length, q=q,
                          intervention_start=intervention_start+mttd,
                          intervention_length=intervention_length)
@@ -362,7 +363,7 @@ def compute_and_plot(region='Spain',ifr=0.007,beta=default_beta,gamma=default_ga
     prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
         pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, \
         q_past, immune_fraction, apparent_R, mttd, pred_daily_new_infections = \
-        fit_q_and_forecast(region,beta,gamma,ifr,forecast_length,set_q=q)
+        fit_q_and_forecast(region,beta,gamma,ifr,forecast_length,set_q=None)
 
     plot_title = '{} {}-day forecast with {} for {} days'.format(region,forecast_length,q_past,intervention_length)
     plot_forecast(inferred_data_dates, cum_deaths, mttd, prediction_dates, pred_cum_deaths, pred_cum_deaths_low,
@@ -416,10 +417,17 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200
         intervention_length=forecast_length*2
     intervention_start = 0
 
+
+    q1, mttd = assess_intervention_effectiveness(region,fit_type='linear')
+    q2, mttd = assess_intervention_effectiveness(region,fit_type='constant')
+    q1 = max(0,min(1,q1(mttd))); q2 = max(0,min(1,q2(mttd)))
+    qmin = max(0,min(q1,q2)-0.1)
+    qmax = min(1,max(q1,q2)+0.1)
+
     prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
       pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, \
       S = forecast(u0,0,N,[inferred_data_dates[-1]],cum_deaths,ifr,beta,gamma,
-                 q_current,intervention_start,intervention_length,forecast_length,'gamma',compute_interval=True)
+                 q_current,intervention_start,intervention_length,forecast_length,'gamma',compute_interval=[qmin,qmax])
     
     pred_daily_new_infections = - np.diff(S)
     pred_daily_deaths = np.diff(pred_cum_deaths);
@@ -428,6 +436,7 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200
     return prediction_dates[1:], pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
             pred_cum_deaths[1:], pred_cum_deaths_low[1:], pred_cum_deaths_high[1:], \
             q_current, immune_fraction, apparent_R, mttd, pred_daily_new_infections
+
 
 def get_past_infections(region,ifr=default_ifr,beta=default_beta,gamma=default_gamma):
     N = data.get_population(region)
