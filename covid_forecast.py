@@ -465,7 +465,6 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         data_dates, cum_cases, cum_deaths = data.load_time_series(region)
         if cum_deaths[-1]<50: continue
 
-
         prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
             pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, \
             q_past, immune_fraction, apparent_R, mttd, pred_daily_new_infections = \
@@ -481,12 +480,13 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         if print_estimates:
             print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q1,q2, estimated_immunity))
 
-        formatted_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates]
-
         past_dates, past_new_infections = get_past_infections(region,ifr,beta,gamma)
 
+        prediction_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates]
+        past_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in past_dates]
+
         output[region] = {}
-        output[region]['dates'] = formatted_dates
+        output[region]['dates'] = prediction_dates
         output[region]['new infections'] = pred_daily_new_infections
         output[region]['deaths'] = pred_daily_deaths
         output[region]['deaths_low'] = pred_daily_deaths_low
@@ -502,6 +502,16 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
 
 
 def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=65, fit_type='linear'):
+    """
+    For a given region, determine an intervention effectiveness q(t) that
+    reproduces the recent data as accurately as possible.
+    Inputs:
+        - fit_type: 'constant' or 'linear'
+        - slope_penalty: multiplies penalty term for linear fit; has no effect for constant fit.
+            In principle, taking a large slope penalty should be equivalent to doing a constant
+            fit, but do to failure of the optimizer this is not true in practice.
+        - plot_result: if True, show the data and the fit.
+    """
     ifr = default_ifr
 
     beta = default_beta
@@ -555,7 +565,7 @@ def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=6
 
     if plot_result:
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
-          pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high \
+          pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
           = forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,qfun,
                      intervention_start,intervention_length,forecast_length,'gamma',False)
 
