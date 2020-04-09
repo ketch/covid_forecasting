@@ -453,6 +453,12 @@ def get_past_infections(region,ifr=default_ifr,beta=default_beta,gamma=default_g
     return inf_dates, inf_newI
 
 
+def get_non_susceptibles(past_new_infections,pred_daily_new_infections):
+    total_infections1 = np.cumsum(past_new_infections)
+    total_infections2 = np.cumsum(pred_daily_new_infections)+total_infections1[-1]
+    cum_infections = np.hstack([total_infections1,total_infections2])
+    return cum_infections
+
 def write_JSON(regions, forecast_length=200, print_estimates=False):
 
     output = {}
@@ -485,8 +491,14 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         prediction_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates]
         past_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in past_dates]
 
+        non_susceptibles = get_non_susceptibles(past_new_infections,pred_daily_new_infections)
+        all_dates = past_dates+prediction_dates
+
+
         output[region] = {}
-        output[region]['dates'] = prediction_dates
+        output[region]['all dates'] = all_dates
+        output[region]['Non-susceptibles'] = non_susceptibles
+        output[region]['forecast dates'] = prediction_dates
         output[region]['new infections'] = pred_daily_new_infections
         output[region]['deaths'] = pred_daily_deaths
         output[region]['deaths_low'] = pred_daily_deaths_low
