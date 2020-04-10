@@ -459,7 +459,7 @@ def get_non_susceptibles(past_new_infections,pred_daily_new_infections):
     cum_infections = np.hstack([total_infections1,total_infections2])
     return cum_infections
 
-def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,ifr=default_ifr):
+def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,ifr=default_ifr,forecast_length=0):
     data_dates, cum_cases, cum_deaths = data.load_time_series(region)
     start_ind = np.where(cum_deaths>=10)[0][0]
     start_date = data_dates[start_ind]
@@ -469,11 +469,11 @@ def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,ifr=de
     R0 = start_deaths/ifr
     u0 = np.array([N-I0-R0,I0,R0])
     today=date.today()
-    T = mdates.date2num(today)-mdates.date2num(start_date)
+    T = mdates.date2num(today)+forecast_length-mdates.date2num(start_date)
     no_intervention_dates = list(pd.date_range(start=start_date,end=today))
 
     S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=T, q=0., intervention_start=0, intervention_length=0)
-    assert(len(S)==len(no_intervention_dates))
+    assert(len(S)==len(no_intervention_dates)+forecast_length)
     cum_deaths = 10+R*ifr
     new_infections = np.insert(-np.diff(S),0,I0)
     return no_intervention_dates, cum_deaths, new_infections
