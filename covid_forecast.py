@@ -459,6 +459,25 @@ def get_non_susceptibles(past_new_infections,pred_daily_new_infections):
     cum_infections = np.hstack([total_infections1,total_infections2])
     return cum_infections
 
+def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,ifr=default_ifr):
+    data_dates, cum_cases, cum_deaths = data.load_time_series(region)
+    start_ind = np.where(cum_deaths>=10)[0][0]
+    start_date = data_dates[start_ind]
+    start_deaths = cum_deaths[start_ind]
+    N = data.get_population(region)
+    I0 = start_deaths/ifr*4
+    R0 = start_deaths/ifr
+    u0 = np.array([N-I0-R0,I0,R0])
+    today=date.today()
+    T = mdates.date2num(today)-mdates.date2num(start_date)
+    no_intervention_dates = list(pd.date_range(start=start_date,end=today))
+
+    S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=T, q=0., intervention_start=0, intervention_length=0)
+    assert(len(S)==len(no_intervention_dates))
+    cum_deaths = 10+R*ifr
+    new_infections = np.insert(-np.diff(S),0,I0)
+    return no_intervention_dates, cum_deaths, new_infections
+
 def write_JSON(regions, forecast_length=200, print_estimates=False):
 
     output = {}
@@ -494,6 +513,9 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         non_susceptibles = get_non_susceptibles(past_new_infections,pred_daily_new_infections)
         all_dates = past_dates+prediction_dates
 
+        # No-intervention scenario
+        no_interv_dates, no_interv_deaths, no_interv_new_infections = no_intervention_scenario(region)
+        no_interv_dates = [datetime.strftime(d,"%m/%d/%Y") for d in no_interv_dates]
 
         output[region] = {}
         output[region]['all dates'] = all_dates
@@ -508,6 +530,9 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         output[region]['estimated immunity'] = estimated_immunity
         output[region]['past dates'] = past_dates
         output[region]['past new infections'] = past_new_infections
+        output[region]['no-intervention dates'] = no_interv_dates
+        output[region]['no-intervention deaths'] = no_interv_deaths
+        output[region]['no-intervention new infections'] = no_interv_new_infections
         
     with open('./output/forecast_{}.json'.format(date.today()), 'w') as file:
         json.dump(output, file, cls=NumpyEncoder)
