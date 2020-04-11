@@ -595,9 +595,10 @@ def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=6
     if fit_type == 'linear':
         bounds = ((0.,1.),(-0.1,0.1))
         result = optimize.minimize(fit_q_linear,[0.,0.],bounds=bounds,method='slsqp')
-        qfun = lambda t: result.x[0] + t*result.x[1]
+        qfun = lambda t: min(1.,max(0.,result.x[0] + t*result.x[1]))
     elif fit_type == 'constant':
         q = optimize.fsolve(fit_q_constant,0.,epsfcn=0.01)[0]
+        q = min(1.,max(0.,q))
         qfun = lambda t: q
 
     if plot_result:

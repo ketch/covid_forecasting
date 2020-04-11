@@ -111,7 +111,6 @@ population_smallset = {
     'Sweden': 10.12e6,
     'Brazil': 209.3e6,
     'Australia': 24.6e6,
-    'Saudi Arabia': 34813.867e3,
 }
 
 intervention_strength = {
@@ -264,6 +263,7 @@ population = {
     'Saint Lucia': 183.62900000000002e3,
     'Saint Vincent and the Grenadines': 110.947e3,
     'San Marino': 33.938e3,
+    'Saudi Arabia': 34813.867e3,
     'Senegal': 16743.93e3,
     'Serbia': 8737.37e3,
     'Seychelles': 98.34e3,
