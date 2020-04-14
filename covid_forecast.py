@@ -24,6 +24,21 @@ default_beta=0.27
 default_gamma=0.07
 hr = 10 # Hospitalizations per death
 
+
+def avg_ifr(region):
+    age_data = data.age_distribution
+    if not region in age_data.keys():
+        return default_ifr
+    else:
+        pa = age_data[region]
+        pop_decades = np.zeros(9)
+        for decade in range(8):
+            pop_decades[decade] = pa[decade*2]+pa[decade*2+1]
+        pop_decades[8] = np.sum(pa[16:])
+        N = data.get_population(region)
+        return np.dot(pop_decades, data.ifr)/N
+
+
 def ttd_dist():
     "Time to death distribution based on cruise data."
     mean=17; std=7.
@@ -347,12 +362,13 @@ def plot_forecast(inferred_data_dates, cum_deaths, mttd, prediction_dates, pred_
     plt.title(plot_title)
 
 
-def compute_and_plot(region='Spain',ifr=0.007,beta=default_beta,gamma=default_gamma,q=0.,
+def compute_and_plot(region='Spain',beta=default_beta,gamma=default_gamma,q=0.,
              intervention_start=0,intervention_length=30,forecast_length=14,scale='linear',
              plot_type='cumulative',plot_value='deaths',plot_past_pred=True,plot_interval=True,
              death_model='gamma',estimate_q=False):
     "Shows both past and future."
 
+    ifr = avg_ifr(region)
     N = data.get_population(region)
     data_dates, total_cases, cum_deaths = data.load_time_series(region)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
@@ -363,7 +379,7 @@ def compute_and_plot(region='Spain',ifr=0.007,beta=default_beta,gamma=default_ga
     prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
         pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, \
         q_past, immune_fraction, apparent_R, mttd, pred_daily_new_infections = \
-        fit_q_and_forecast(region,beta,gamma,ifr,forecast_length,set_q=None)
+        fit_q_and_forecast(region,beta,gamma,forecast_length,set_q=None)
 
     plot_title = '{} {}-day forecast with {} for {} days'.format(region,forecast_length,q_past,intervention_length)
     plot_forecast(inferred_data_dates, cum_deaths, mttd, prediction_dates, pred_cum_deaths, pred_cum_deaths_low,
@@ -373,7 +389,7 @@ def compute_and_plot(region='Spain',ifr=0.007,beta=default_beta,gamma=default_ga
 
 
 
-def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200,set_q=None,int_len=None):
+def fit_q_and_forecast(region,beta=0.27,gamma=0.07,forecast_length=200,set_q=None,int_len=None):
     """
     Determine an intervention factor (possibly time-dependent) that explains the recent data,
     and then use that to forecast into the future.
@@ -384,6 +400,7 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200
     """
     # These should be adjusted for each region:
     N = data.get_population(region)
+    ifr = avg_ifr(region)
 
     data_dates, cum_cases, cum_deaths = data.load_time_series(region)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
@@ -421,8 +438,8 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200
     q1, mttd = assess_intervention_effectiveness(region,fit_type='linear')
     q2, mttd = assess_intervention_effectiveness(region,fit_type='constant')
     q1 = max(0,min(1,q1(mttd))); q2 = max(0,min(1,q2(mttd)))
-    qmin = max(0,min(q1,q2)-0.1)
-    qmax = min(1,max(q1,q2)+0.1)
+    qmin = max(0,min(q1,q2)-0.2)
+    qmax = min(1,max(q1,q2)+0.2)
 
     prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
       pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, \
@@ -438,8 +455,9 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,ifr=0.007,forecast_length=200
             q_current, immune_fraction, apparent_R, mttd, pred_daily_new_infections
 
 
-def get_past_infections(region,ifr=default_ifr,beta=default_beta,gamma=default_gamma):
+def get_past_infections(region,beta=default_beta,gamma=default_gamma):
     N = data.get_population(region)
+    ifr = avg_ifr(region)
     data_dates, cum_cases, cum_deaths = data.load_time_series(region)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
 
@@ -459,14 +477,23 @@ def get_non_susceptibles(past_new_infections,pred_daily_new_infections):
     cum_infections = np.hstack([total_infections1,total_infections2])
     return cum_infections
 
-def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,ifr=default_ifr,forecast_length=0):
+def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,undercount_factor=1.45,dthresh=20,imult=8,forecast_length=0):
+    """
+    Counterfactual prediction (including past values) of what would have occurred with no intervention.
+
+    undercount_factor: real deaths are assumed to be this times recorded deaths
+    dthresh: # of (real) deaths at which to start simulation
+    imult: ratio of active infectives to recovered at simulation start.  Should be equal to epidemic growth over mttd.
+    """
+    ifr = avg_ifr(region)
     data_dates, cum_cases, cum_deaths = data.load_time_series(region)
-    start_ind = np.where(cum_deaths>=10)[0][0]
+    cum_deaths = cum_deaths*undercount_factor
+    start_ind = np.where(cum_deaths>=dthresh)[0][0]
     start_date = data_dates[start_ind]
     start_deaths = cum_deaths[start_ind]
     N = data.get_population(region)
-    I0 = start_deaths/ifr*4
-    R0 = start_deaths/ifr
+    I0 = start_deaths/ifr*imult
+    R0 = start_deaths/ifr - start_deaths
     u0 = np.array([N-I0-R0,I0,R0])
     today=date.today()
     T = mdates.date2num(today)+forecast_length-mdates.date2num(start_date)
@@ -474,26 +501,26 @@ def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,ifr=de
 
     S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=T, q=0., intervention_start=0, intervention_length=0)
     assert(len(S)==len(no_intervention_dates)+forecast_length)
-    cum_deaths = 10+R*ifr
+    cum_deaths = start_deaths+(R-R0)*ifr
     new_infections = np.insert(-np.diff(S),0,I0)
     return no_intervention_dates, cum_deaths, new_infections
 
 def write_JSON(regions, forecast_length=200, print_estimates=False):
 
     output = {}
-    ifr = default_ifr
     gamma = default_gamma
     beta = default_beta
 
     for region in regions:
 
+        ifr = avg_ifr(region)
         data_dates, cum_cases, cum_deaths = data.load_time_series(region)
         if cum_deaths[-1]<50: continue
 
         prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
             pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, \
             q_past, immune_fraction, apparent_R, mttd, pred_daily_new_infections = \
-            fit_q_and_forecast(region,beta,gamma,ifr,forecast_length)
+            fit_q_and_forecast(region,beta,gamma,forecast_length)
 
         #q_est = data.estimated_intervention(region)
         q1, mttd = assess_intervention_effectiveness(region,fit_type='linear')
@@ -505,7 +532,7 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         if print_estimates:
             print('{:>15}: {:.2f} {:.2f} {:.3f}'.format(region,q1,q2, estimated_immunity))
 
-        past_dates, past_new_infections = get_past_infections(region,ifr,beta,gamma)
+        past_dates, past_new_infections = get_past_infections(region,beta,gamma)
 
         prediction_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in prediction_dates]
         past_dates = [datetime.strftime(mdates.num2date(ddd),"%m/%d/%Y") for ddd in past_dates]
@@ -514,7 +541,7 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         all_dates = past_dates+prediction_dates
 
         # No-intervention scenario
-        no_interv_dates, no_interv_deaths, no_interv_new_infections = no_intervention_scenario(region)
+        no_interv_dates, no_interv_deaths, no_interv_new_infections = no_intervention_scenario(region,forecast_length=0)
         no_interv_dates = [datetime.strftime(d,"%m/%d/%Y") for d in no_interv_dates]
 
         output[region] = {}
@@ -549,7 +576,7 @@ def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=6
             fit, but do to failure of the optimizer this is not true in practice.
         - plot_result: if True, show the data and the fit.
     """
-    ifr = default_ifr
+    ifr = avg_ifr(region)
 
     beta = default_beta
     gamma = default_gamma
