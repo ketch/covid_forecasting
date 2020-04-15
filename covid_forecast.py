@@ -477,7 +477,7 @@ def get_non_susceptibles(past_new_infections,pred_daily_new_infections):
     cum_infections = np.hstack([total_infections1,total_infections2])
     return cum_infections
 
-def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,undercount_factor=1.45,dthresh=20,imult=8,forecast_length=0):
+def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,undercount_factor=1.45,dthresh=50,dthresh_min=20,imult=8,forecast_length=0):
     """
     Counterfactual prediction (including past values) of what would have occurred with no intervention.
 
@@ -488,6 +488,14 @@ def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,underc
     ifr = avg_ifr(region)
     data_dates, cum_cases, cum_deaths = data.load_time_series(region)
     cum_deaths = cum_deaths*undercount_factor
+
+    dth = dthresh
+    if cum_deaths[-1]<dthresh:
+        if cum_deaths[-1]<dthresh_min: raise(Exception)
+        else: dth = dthresh_min
+    if region == 'Korea, South':
+        dth = 20
+
     start_ind = np.where(cum_deaths>=dthresh)[0][0]
     start_date = data_dates[start_ind]
     start_deaths = cum_deaths[start_ind]
@@ -495,9 +503,9 @@ def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,underc
     I0 = start_deaths/ifr*imult
     R0 = start_deaths/ifr - start_deaths
     u0 = np.array([N-I0-R0,I0,R0])
-    today=date.today()
-    T = mdates.date2num(today)+forecast_length-mdates.date2num(start_date)
-    no_intervention_dates = list(pd.date_range(start=start_date,end=today))
+    end_date=data_dates[-1]
+    T = mdates.date2num(end_date)+forecast_length-mdates.date2num(start_date)
+    no_intervention_dates = list(pd.date_range(start=start_date,end=end_date))
 
     S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=T, q=0., intervention_start=0, intervention_length=0)
     assert(len(S)==len(no_intervention_dates)+forecast_length)
@@ -541,7 +549,7 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         all_dates = past_dates+prediction_dates
 
         # No-intervention scenario
-        no_interv_dates, no_interv_deaths, no_interv_new_infections = no_intervention_scenario(region,forecast_length=0)
+        no_interv_dates, no_interv_deaths, no_interv_new_infections = no_intervention_scenario(region,forecast_length=forecast_length)
         no_interv_dates = [datetime.strftime(d,"%m/%d/%Y") for d in no_interv_dates]
 
         output[region] = {}
