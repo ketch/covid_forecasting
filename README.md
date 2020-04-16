@@ -75,6 +75,14 @@ literature; see https://github.com/ketch/covid-blog-posts/wiki/Literature.
 
 # Data sources
 
+## Parameter values
+
+The model parameter values are based on information from a wide range of data sets and publications.
+See:
+
+ - https://github.com/ketch/covid-blog-posts/wiki/Parameter-estimates
+ - https://github.com/ketch/covid-blog-posts/wiki/Literature
+
 ## Numbers of deaths due to COVID-19
 
 - For countries: https://github.com/CSSEGISandData/COVID-19/blob/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv
