@@ -505,10 +505,12 @@ def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,underc
     u0 = np.array([N-I0-R0,I0,R0])
     end_date=data_dates[-1]
     T = mdates.date2num(end_date)+forecast_length-mdates.date2num(start_date)
+    end_date = mdates.num2date(mdates.date2num(data_dates[-1])+forecast_length)
+    end_date = end_date.replace(tzinfo=None)
     no_intervention_dates = list(pd.date_range(start=start_date,end=end_date))
 
     S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=T, q=0., intervention_start=0, intervention_length=0)
-    assert(len(S)==len(no_intervention_dates)+forecast_length)
+    assert(len(S)==len(no_intervention_dates))
     cum_deaths = start_deaths+(R-R0)*ifr
     new_infections = np.insert(-np.diff(S),0,I0)
     return no_intervention_dates, cum_deaths, new_infections
