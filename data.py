@@ -72,7 +72,10 @@ def estimated_intervention(region):
         q1 = q1*intervention_effects[measure]
     return 1-q1
 
-def load_time_series(region):
+def moving_average(x, w):
+    return np.convolve(x, np.ones(w), 'valid') / w
+
+def load_time_series(region,smooth=False):
     """
     Fetch data and parse to get time series of confirmed cases and deaths.
     For now, only works with JHU data.
@@ -92,7 +95,25 @@ def load_time_series(region):
             raise(Exception)
         rows = deaths_df['Country/Region'].isin([region])
         cum_deaths = [deaths_df[day.strftime('%-m/%-d/%y')][rows].sum() for day in data_dates]
-    return data_dates, np.array(cum_cases), np.array(cum_deaths)
+    if smooth:
+        cum_cases = np.array(cum_cases)
+        cum_deaths = np.array(cum_deaths)
+        daily_cases = np.insert(np.diff(cum_cases),0,cum_cases[0])
+        daily_deaths = np.insert(np.diff(cum_deaths),0,cum_deaths[0])
+        smooth_cases = np.zeros_like(daily_cases)
+        smooth_deaths = np.zeros_like(daily_deaths)
+
+        smooth_cases[0] = 0.5*(daily_cases[0]+daily_cases[1])
+        smooth_cases[1:-1] = moving_average(daily_cases, 3)
+        smooth_cases[-1] = 0.5*(daily_cases[-1]+daily_cases[-2])
+
+        smooth_deaths[0] = 0.5*(daily_deaths[0]+daily_deaths[1])
+        smooth_deaths[1:-1] = moving_average(daily_deaths, 3)
+        smooth_deaths[-1] = 0.5*(daily_deaths[-1]+daily_deaths[-2])
+        return data_dates, np.cumsum(smooth_cases), np.cumsum(smooth_deaths)
+    else:
+        return data_dates, np.array(cum_cases), np.array(cum_deaths)
+
 
 population_smallset = {
     'Austria': 8.822e6,

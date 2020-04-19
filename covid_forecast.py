@@ -7,7 +7,7 @@ import matplotlib.dates as mdates
 import data
 import json
 from scipy import optimize
-from utils import NumpyEncoder, smooth
+from utils import NumpyEncoder, smooth_series
 from datetime import datetime, date
 
 """
@@ -22,6 +22,7 @@ General nomenclature:
 default_ifr = 0.006
 default_beta=0.27
 default_gamma=0.07
+smooth = True
 hr = 10 # Hospitalizations per death
 
 
@@ -370,7 +371,7 @@ def compute_and_plot(region='Spain',beta=default_beta,gamma=default_gamma,q=0.,
 
     ifr = avg_ifr(region)
     N = data.get_population(region)
-    data_dates, total_cases, cum_deaths = data.load_time_series(region)
+    data_dates, total_cases, cum_deaths = data.load_time_series(region,smooth)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
 
     u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
@@ -402,7 +403,7 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,forecast_length=200,set_q=Non
     N = data.get_population(region)
     ifr = avg_ifr(region)
 
-    data_dates, cum_cases, cum_deaths = data.load_time_series(region)
+    data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
 
     u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
@@ -458,7 +459,7 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,forecast_length=200,set_q=Non
 def get_past_infections(region,beta=default_beta,gamma=default_gamma):
     N = data.get_population(region)
     ifr = avg_ifr(region)
-    data_dates, cum_cases, cum_deaths = data.load_time_series(region)
+    data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
 
     u0, mttd, inf_dates, inf_I, inf_R, inf_newI = \
@@ -477,7 +478,7 @@ def get_non_susceptibles(past_new_infections,pred_daily_new_infections):
     cum_infections = np.hstack([total_infections1,total_infections2])
     return cum_infections
 
-def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,undercount_factor=1.45,dthresh=50,dthresh_min=20,imult=8,forecast_length=0):
+def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,undercount_factor=1.45,dthresh=50,dthresh_min=20,imult=16,forecast_length=0):
     """
     Counterfactual prediction (including past values) of what would have occurred with no intervention.
 
@@ -486,7 +487,7 @@ def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,underc
     imult: ratio of active infectives to recovered at simulation start.  Should be equal to epidemic growth over mttd.
     """
     ifr = avg_ifr(region)
-    data_dates, cum_cases, cum_deaths = data.load_time_series(region)
+    data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
     cum_deaths = cum_deaths*undercount_factor
 
     dth = dthresh
@@ -523,8 +524,11 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
 
     for region in regions:
 
+        # China's recent data is nonsense.
+        if region == 'China': continue
+
         ifr = avg_ifr(region)
-        data_dates, cum_cases, cum_deaths = data.load_time_series(region)
+        data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
         if cum_deaths[-1]<50: continue
 
         prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
@@ -570,6 +574,11 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         output[region]['no-intervention dates'] = no_interv_dates
         output[region]['no-intervention deaths'] = no_interv_deaths
         output[region]['no-intervention new infections'] = no_interv_new_infections
+
+
+        data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth=False)
+        three_day_avg = np.mean(np.diff(cum_deaths)[-3:])
+        output[region]['last three days average deaths'] = three_day_avg
         
     with open('./output/forecast_{}.json'.format(date.today()), 'w') as file:
         json.dump(output, file, cls=NumpyEncoder)
@@ -592,7 +601,7 @@ def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=6
     gamma = default_gamma
 
     N = data.get_population(region)
-    data_dates, total_cases, cum_deaths = data.load_time_series(region)
+    data_dates, total_cases, cum_deaths = data.load_time_series(region,smooth)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
 
     u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
@@ -615,7 +624,7 @@ def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=6
         log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-mttd:],1.e0))
         endval = qfun(mttd)
         residual = np.linalg.norm(np.arange(mttd)*(np.log(np.diff(pred_cum_deaths)) \
-                    - smooth(log_daily_deaths))) + slope_penalty*abs(v[1]) + penalty*(max(0,endval-1) - min(0,endval))
+                    - smooth_series(log_daily_deaths))) + slope_penalty*abs(v[1]) + penalty*(max(0,endval-1) - min(0,endval))
         return residual
 
     def fit_q_constant(q):
@@ -626,7 +635,7 @@ def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=6
                      intervention_start,intervention_length,forecast_length,'gamma',False)
 
         log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-mttd:],1.e-0))
-        residual = np.linalg.norm(np.arange(mttd)**2*(np.log(np.diff(pred_cum_deaths))-smooth(log_daily_deaths)))
+        residual = np.linalg.norm(np.arange(mttd)**2*(np.log(np.diff(pred_cum_deaths))-smooth_series(log_daily_deaths)))
         return residual
 
     if fit_type == 'linear':
