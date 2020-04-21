@@ -8,7 +8,7 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 
-def smooth(x):
+def smooth_series(x):
     m = 2
     y = x.copy()
     for i in range(1,len(x)-1):

@@ -9,6 +9,7 @@ import json
 from scipy import optimize
 from utils import NumpyEncoder, smooth_series
 from datetime import datetime, date
+import deconvolution
 
 """
 Code for modeling and predicting the COVID-19 outbreak.
@@ -149,14 +150,14 @@ def SIR2(u0, beta=default_beta, gamma=default_gamma, N = 1, T=14, q=[0], interve
     return S, I, R
 
 
-def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,extended_output=False):
+def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,method='deconvolution',extended_output=False):
     """
     Given a sequence of cumulative deaths, infer current values of S, I, and R
     for a population.  The inference dates are offset (backward) from
     the input time series by the mean time to death.
 
     It is assumed that for each death on day n, there were n/ifr new infections
-    on day n-mttd.
+    on day n-offset.
 
     Inputs:
         - cum_deaths: time series of cumulative deaths
@@ -165,32 +166,42 @@ def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,extended_output=False):
         - gamma: SIR model parameter (1/(time to recovery))
         - N: population size
     Outputs:
-        - inferred_data_dates: goes from data_start - mttd up to today
+        - inferred_data_dates: goes from data_start - offset up to today
     """
     daily_deaths = np.diff(cum_deaths); daily_deaths = np.insert(daily_deaths,0,cum_deaths[0])
-    mttd = int(round(get_mttd(daily_deaths)))
+    if method == 'shift':
+        offset = int(round(get_mttd(daily_deaths)))
 
-    inferred_data_dates = np.arange(data_start-mttd,data_start+len(cum_deaths))
-    cum_deaths = np.insert(cum_deaths,0,[0]*mttd)
-    
-    inf_daily_infections = np.zeros_like(inferred_data_dates)
+        inferred_data_dates = np.arange(data_start-offset,data_start+len(cum_deaths))
+        #cum_deaths = np.insert(cum_deaths,0,[0]*offset)  # Seems inactive
+        
+        inf_daily_infections = np.zeros_like(inferred_data_dates)
+        
+        inf_daily_infections[:-offset] = daily_deaths/ifr  # Inferred new infections each day
+
+    elif method == 'deconvolution':
+        pdf = np.loadtxt('time_to_death.txt')
+        offset1 = deconvolution.get_offset(pdf,threshold=0.10)
+        offset2 = get_mttd(daily_deaths)
+        offset = int(round(0.5*(offset1+offset2)))
+        inf_daily_infections, _ = deconvolution.infer_infections(daily_deaths,pdf,ifr)
+        inferred_data_dates = np.arange(data_start,data_start+len(cum_deaths))
+        assert(len(inferred_data_dates)==len(inf_daily_infections))
+
     cum_recovered = np.zeros_like(inferred_data_dates)
-    
-    inf_daily_infections[:-mttd] = daily_deaths/ifr  # Inferred new infections each day
-
     for i in range(len(inferred_data_dates)):
         cum_recovered[i] = np.sum(inf_daily_infections[:i]*(1-np.exp(-gamma*(i-np.arange(i)))))
     active_infections = np.cumsum(inf_daily_infections) - cum_recovered
     
     
-    # Initial values, mttd+1 days ago
-    I0 = active_infections[-(mttd+1)]
-    R0 = cum_recovered[-(mttd+1)]
+    # Initial values, offset+1 days ago
+    I0 = active_infections[-(offset+1)]
+    R0 = cum_recovered[-(offset+1)]
     u0 = np.array([N-I0-R0,I0,R0])
     if extended_output:
-        return u0, mttd, inferred_data_dates, active_infections, cum_recovered, inf_daily_infections
+        return u0, offset, inferred_data_dates, active_infections, cum_recovered, inf_daily_infections
     else:
-        return u0, mttd, inferred_data_dates
+        return u0, offset, inferred_data_dates
 
 
 def forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=default_beta,gamma=default_gamma,q=0.,intervention_start=0,
