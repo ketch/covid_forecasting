@@ -27,7 +27,16 @@ smooth = True
 hr = 10 # Hospitalizations per death
 
 
-def avg_ifr(region):
+def avg_ifr(region,which='mean'):
+    if which == 'mean':
+        ifr_values = data.ifr
+    elif which == 'low':
+        ifr_values = data.ifr_low
+    elif which == 'high':
+        ifr_values = data.ifr_high
+    age_data = data.age_distribution
+    if not region in age_data.keys():
+        return default_ifr
     age_data = data.age_distribution
     if not region in age_data.keys():
         return default_ifr
@@ -38,7 +47,7 @@ def avg_ifr(region):
             pop_decades[decade] = pa[decade*2]+pa[decade*2+1]
         pop_decades[8] = np.sum(pa[16:])
         N = data.get_population(region)
-        return np.dot(pop_decades, data.ifr)/N
+        return np.dot(pop_decades, ifr_values)/N
 
 
 def ttd_dist():
@@ -108,7 +117,7 @@ def SIR(u0, beta=default_beta, gamma=default_gamma, N = 1, T=14, q=0, interventi
         return du
 
     times = np.arange(0,T+1)
-    solution = solve_ivp(f,[0,T],u0,t_eval=times,method='RK23',atol=1.e-3,rtol=1.e-3)
+    solution = solve_ivp(f,[0,T],u0,t_eval=times,method='RK23',atol=1.e-3,rtol=1.e-3,max_step=0.5)
     S = solution.y[0,:]
     I = solution.y[1,:]
     R = solution.y[2,:]
@@ -417,26 +426,18 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,forecast_length=200,set_q=Non
     data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
 
-    u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
-    cum_deaths = np.insert(cum_deaths,0,[0]*mttd)
+    u0, offset, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
+    cum_deaths = np.insert(cum_deaths,0,[0]*offset)
     
-    q_past, mttd = assess_intervention_effectiveness(region)
+    q_past, offset = assess_intervention_effectiveness(cum_deaths,N,ifr,data_dates,fit_type='linear')
     if set_q == 'estimated':
         q_past = data.estimated_intervention(region)
     if (type(set_q) == float) or callable(set_q):
         q_past = set_q
 
-    if callable(q_past):
-        q_current = q_past(mttd)
-    else:
-        q_current = q_past
-
-    apparent_R = (1-q_current)*beta/gamma
-    apparent_R = max(apparent_R,0)
-
-    # Integrate over mttd (in past) to get initial data
-    S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=mttd+1, q=q_past, intervention_start=0,
-                 intervention_length=mttd*2)
+    # Integrate over offset (in past) to get initial data
+    S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=offset+1, q=q_past, intervention_start=0,
+                 intervention_length=offset*2)
 
     u0 = np.array([S[-1],I[-1],R[-1]])
 
@@ -446,12 +447,15 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,forecast_length=200,set_q=Non
         intervention_length=forecast_length*2
     intervention_start = 0
 
-
-    q1, mttd = assess_intervention_effectiveness(region,fit_type='linear')
-    q2, mttd = assess_intervention_effectiveness(region,fit_type='constant')
-    q1 = max(0,min(1,q1(mttd))); q2 = max(0,min(1,q2(mttd)))
+    q1, offset = assess_intervention_effectiveness(cum_deaths,N,ifr,data_dates,fit_type='linear')
+    q2, offset = assess_intervention_effectiveness(cum_deaths,N,ifr,data_dates,fit_type='constant')
+    q_current = 0.5*(q1(offset)+q2(offset))
+    q1 = max(0,min(1,q1(offset))); q2 = max(0,min(1,q2(offset)))
     qmin = max(0,min(q1,q2)-0.2)
     qmax = min(1,max(q1,q2)+0.2)
+
+    apparent_R = (1-q_current)*beta/gamma
+    apparent_R = max(apparent_R,0)
 
     prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
       pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, \
@@ -464,10 +468,14 @@ def fit_q_and_forecast(region,beta=0.27,gamma=0.07,forecast_length=200,set_q=Non
 
     return prediction_dates[1:], pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
             pred_cum_deaths[1:], pred_cum_deaths_low[1:], pred_cum_deaths_high[1:], \
-            q_current, immune_fraction, apparent_R, mttd, pred_daily_new_infections
+            q_current, immune_fraction, apparent_R, offset, pred_daily_new_infections
 
 
 def get_past_infections(region,beta=default_beta,gamma=default_gamma):
+    """Infer past infections up to mttd days in the past.  Then model up to the present
+       based on a fitted intervention effectiveness.
+    """
+
     N = data.get_population(region)
     ifr = avg_ifr(region)
     data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
@@ -476,7 +484,7 @@ def get_past_infections(region,beta=default_beta,gamma=default_gamma):
     u0, mttd, inf_dates, inf_I, inf_R, inf_newI = \
         infer_initial_data(cum_deaths,data_start,ifr,gamma,N,extended_output=1)
 
-    q_past, mttd = assess_intervention_effectiveness(region)
+    q_past, mttd = assess_intervention_effectiveness(cum_deaths,N,ifr,data_dates)
     S, I, R= SIR(u0, beta, gamma, N=N, T=mttd, q=q_past, intervention_start=0,
                  intervention_length=mttd*2)
     inf_newI[-mttd:] = -np.diff(S)
@@ -489,15 +497,19 @@ def get_non_susceptibles(past_new_infections,pred_daily_new_infections):
     cum_infections = np.hstack([total_infections1,total_infections2])
     return cum_infections
 
-def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,undercount_factor=1.45,dthresh=50,dthresh_min=20,imult=16,forecast_length=0):
+def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,undercount_factor=1.45,
+                             dthresh=50,dthresh_min=20,imult=16,forecast_length=0,ifr_val='mean'):
     """
     Counterfactual prediction (including past values) of what would have occurred with no intervention.
 
     undercount_factor: real deaths are assumed to be this times recorded deaths
     dthresh: # of (real) deaths at which to start simulation
     imult: ratio of active infectives to recovered at simulation start.  Should be equal to epidemic growth over mttd.
+    
+    We ought to change this to use proper (deconvolution-based) past inference for the initial data.
+    Should also allow direct specification of the start date.
     """
-    ifr = avg_ifr(region)
+    ifr = avg_ifr(region,ifr_val)
     data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
     cum_deaths = cum_deaths*undercount_factor
 
@@ -538,7 +550,9 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         # China's recent data is nonsense.
         if region == 'China': continue
 
+        N = data.get_population(region)
         ifr = avg_ifr(region)
+
         data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
         if cum_deaths[-1]<50: continue
 
@@ -548,8 +562,8 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
             fit_q_and_forecast(region,beta,gamma,forecast_length)
 
         #q_est = data.estimated_intervention(region)
-        q1, mttd = assess_intervention_effectiveness(region,fit_type='linear')
-        q2, mttd = assess_intervention_effectiveness(region,fit_type='constant')
+        q1, mttd = assess_intervention_effectiveness(cum_deaths,N,ifr,data_dates,fit_type='linear')
+        q2, mttd = assess_intervention_effectiveness(cum_deaths,N,ifr,data_dates,fit_type='constant')
         q1 = max(0,min(1,q1(mttd))); q2 = max(0,min(1,q2(mttd)))
 
         N = data.get_population(region)
@@ -595,7 +609,7 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         json.dump(output, file, cls=NumpyEncoder)
 
 
-def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=65, fit_type='linear'):
+def assess_intervention_effectiveness(cum_deaths, N, ifr, data_dates, plot_result=False, slope_penalty=65, fit_type='linear'):
     """
     For a given region, determine an intervention effectiveness q(t) that
     reproduces the recent data as accurately as possible.
@@ -606,20 +620,20 @@ def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=6
             fit, but do to failure of the optimizer this is not true in practice.
         - plot_result: if True, show the data and the fit.
     """
-    ifr = avg_ifr(region)
+    #ifr = avg_ifr(region)
 
     beta = default_beta
     gamma = default_gamma
 
-    N = data.get_population(region)
-    data_dates, total_cases, cum_deaths = data.load_time_series(region,smooth)
+    #N = data.get_population(region)
+    #data_dates, total_cases, cum_deaths = data.load_time_series(region,smooth)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
 
-    u0, mttd, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
-    cum_deaths = np.insert(cum_deaths,0,[0]*mttd)
+    u0, offset, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
+    cum_deaths = np.insert(cum_deaths,0,[0]*offset)
 
-    intervention_start=-mttd # Could just set -infinity
-    intervention_length=mttd
+    intervention_start=-offset # Could just set -infinity
+    intervention_length=offset
     forecast_length=0
 
     def fit_q_linear(v):
@@ -630,11 +644,11 @@ def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=6
         qfun = lambda t: q0+slope*t
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
-          = forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,qfun,
+          = forecast(u0,offset,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,qfun,
                      intervention_start,intervention_length,forecast_length,'gamma',False)
-        log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-mttd:],1.e0))
-        endval = qfun(mttd)
-        residual = np.linalg.norm(np.arange(mttd)*(np.log(np.diff(pred_cum_deaths)) \
+        log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-offset:],1.e0))
+        endval = qfun(offset)
+        residual = np.linalg.norm(np.arange(offset)*(np.log(np.diff(pred_cum_deaths)) \
                     - smooth_series(log_daily_deaths))) + slope_penalty*abs(v[1]) + penalty*(max(0,endval-1) - min(0,endval))
         return residual
 
@@ -642,11 +656,11 @@ def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=6
         "Fit a constant (in time) intervention factor to the recent data."
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
-          = forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,q,
+          = forecast(u0,offset,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,q,
                      intervention_start,intervention_length,forecast_length,'gamma',False)
 
-        log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-mttd:],1.e-0))
-        residual = np.linalg.norm(np.arange(mttd)**2*(np.log(np.diff(pred_cum_deaths))-smooth_series(log_daily_deaths)))
+        log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-offset:],1.e-0))
+        residual = np.linalg.norm(np.arange(offset)**2*(np.log(np.diff(pred_cum_deaths))-smooth_series(log_daily_deaths)))
         return residual
 
     if fit_type == 'linear':
@@ -661,13 +675,13 @@ def assess_intervention_effectiveness(region, plot_result=False, slope_penalty=6
     if plot_result:
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
-          = forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,qfun,
+          = forecast(u0,offset,N,inferred_data_dates,cum_deaths,ifr,beta,gamma,qfun,
                      intervention_start,intervention_length,forecast_length,'gamma',False)
 
         plt.semilogy(prediction_dates[1:],np.diff(pred_cum_deaths))
-        plt.semilogy(prediction_dates[1:],np.diff(cum_deaths[-mttd-1:]))
+        plt.semilogy(prediction_dates[1:],np.diff(cum_deaths[-offset-1:]))
 
-    return qfun, mttd
+    return qfun, offset
 
 if __name__ == '__main__':
 
