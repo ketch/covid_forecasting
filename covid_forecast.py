@@ -159,7 +159,7 @@ def SIR2(u0, beta=default_beta, gamma=default_gamma, N = 1, T=14, q=[0], interve
     return S, I, R
 
 
-def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,method='deconvolution',extended_output=False):
+def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,method='deconvolution',extended_output=False,pdf=None):
     """
     Given a sequence of cumulative deaths, infer current values of S, I, and R
     for a population.  The inference dates are offset (backward) from
@@ -182,14 +182,14 @@ def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,method='deconvolution',
         offset = int(round(get_mttd(daily_deaths)))
 
         inferred_data_dates = np.arange(data_start-offset,data_start+len(cum_deaths))
-        #cum_deaths = np.insert(cum_deaths,0,[0]*offset)  # Seems inactive
         
         inf_daily_infections = np.zeros_like(inferred_data_dates)
         
         inf_daily_infections[:-offset] = daily_deaths/ifr  # Inferred new infections each day
 
     elif method == 'deconvolution':
-        pdf = np.loadtxt('time_to_death.txt')
+        if pdf is None:
+            pdf = deconvolution.generate_pdf(8.,1./gamma/8.)
         offset1 = deconvolution.get_offset(pdf,threshold=0.10)
         offset2 = get_mttd(daily_deaths)
         offset = int(round(0.5*(offset1+offset2)))
@@ -497,8 +497,9 @@ def get_non_susceptibles(past_new_infections,pred_daily_new_infections):
     cum_infections = np.hstack([total_infections1,total_infections2])
     return cum_infections
 
-def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,undercount_factor=1.45,
-                             dthresh=50,dthresh_min=20,imult=16,forecast_length=0,ifr_val='mean'):
+def no_intervention_scenario(region,pdf,beta=default_beta,gamma=default_gamma,undercount_factor=1.45,
+                             start_date=None,dthresh=50,dthresh_min=20,imult=16,forecast_length=0,
+                             ifr_val='mean',IVs='deconvolution'):
     """
     Counterfactual prediction (including past values) of what would have occurred with no intervention.
 
@@ -513,31 +514,53 @@ def no_intervention_scenario(region,beta=default_beta,gamma=default_gamma,underc
     data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
     cum_deaths = cum_deaths*undercount_factor
 
-    dth = dthresh
-    if cum_deaths[-1]<dthresh:
-        if cum_deaths[-1]<dthresh_min: raise(Exception)
-        else: dth = dthresh_min
-    if region == 'Korea, South':
-        dth = 20
+    if start_date is None:
+        dth = dthresh
+        if cum_deaths[-1]<dthresh:
+            if cum_deaths[-1]<dthresh_min: raise(Exception)
+            else: dth = dthresh_min
+        if region == 'Korea, South':
+            dth = 20
 
-    start_ind = np.where(cum_deaths>=dthresh)[0][0]
-    start_date = data_dates[start_ind]
+        start_ind = np.where(cum_deaths>=dthresh)[0][0]
+        start_date = data_dates[start_ind]
+    else:
+        start_ind = np.where([np.array([datetime.strftime(d,'%m-%d-%Y') for d in data_dates])==start_date])[1][0]
+        start_date = datetime.strptime(start_date,'%m-%d-%Y')
     start_deaths = cum_deaths[start_ind]
     N = data.get_population(region)
-    I0 = start_deaths/ifr*imult
-    R0 = start_deaths/ifr - start_deaths
+
+    if IVs=='deconvolution':
+        data_start = mdates.date2num(data_dates[0])  # First day for which we have data
+        _, offset, inf_dates, I, R, delta_I = \
+                infer_initial_data(cum_deaths,data_start,ifr,gamma,N,method='deconvolution',extended_output=1)
+        I0 = I[start_ind]
+        R0 = R[start_ind]
+    else:
+        I0 = start_deaths/ifr*imult
+        R0 = start_deaths/ifr - start_deaths
+
     u0 = np.array([N-I0-R0,I0,R0])
-    end_date=data_dates[-1]
-    T = mdates.date2num(end_date)+forecast_length-mdates.date2num(start_date)
-    end_date = mdates.num2date(mdates.date2num(data_dates[-1])+forecast_length)
-    end_date = end_date.replace(tzinfo=None)
+    T = mdates.date2num(data_dates[-1])+forecast_length-mdates.date2num(start_date)
+    end_date = (mdates.num2date(mdates.date2num(data_dates[-1])+forecast_length)).replace(tzinfo=None)
     no_intervention_dates = list(pd.date_range(start=start_date,end=end_date))
 
     S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=T, q=0., intervention_start=0, intervention_length=0)
     assert(len(S)==len(no_intervention_dates))
-    cum_deaths = start_deaths+(R-R0)*ifr
-    new_infections = np.insert(-np.diff(S),0,I0)
-    return no_intervention_dates, cum_deaths, new_infections
+
+    #cum_deaths = start_deaths+(R-R0)*ifr
+    no_interv_new_infections = np.insert(-np.diff(S),0,-np.diff(S)[0])
+
+    #  Assemble hypothetical new infections timeline
+    new_infections = delta_I.copy()
+    new_infections[-len(no_interv_new_infections):] = no_interv_new_infections
+    # Convolve with pdf to get deaths
+    M0 = deconvolution.convolution_matrix(pdf,len(data_dates))*ifr
+    daily_deaths = M0@new_infections
+    cum_no_interv_deaths = np.cumsum(daily_deaths)
+    length = len(no_intervention_dates)
+
+    return no_intervention_dates, cum_no_interv_deaths[-length:], new_infections[-length:]
 
 def write_JSON(regions, forecast_length=200, print_estimates=False):
 
@@ -667,6 +690,7 @@ def assess_intervention_effectiveness(cum_deaths, N, ifr, data_dates, plot_resul
         bounds = ((0.,1.),(-0.1,0.1))
         result = optimize.minimize(fit_q_linear,[0.,0.],bounds=bounds,method='slsqp')
         qfun = lambda t: min(1.,max(0.,result.x[0] + t*result.x[1]))
+        qfun = np.vectorize(qfun)
     elif fit_type == 'constant':
         q = optimize.fsolve(fit_q_constant,0.,epsfcn=0.01)[0]
         q = min(1.,max(0.,q))
