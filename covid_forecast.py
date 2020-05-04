@@ -22,7 +22,7 @@ General nomenclature:
 
 default_ifr = 0.006
 default_gamma = 1./14
-default_beta = 3.8*default_gamma
+default_beta = 3.0*default_gamma
 smooth = True
 
 def avg_ifr(region,which='mean'):
