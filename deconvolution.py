@@ -2,6 +2,7 @@ import numpy as np
 import data
 from scipy import linalg, optimize
 import matplotlib.pyplot as plt
+from scipy import stats
 
 def get_offset(pdf,threshold):
     cdf = np.cumsum(pdf)/np.sum(pdf)
@@ -9,7 +10,18 @@ def get_offset(pdf,threshold):
     offset = np.flatnonzero(good)[0]
     return offset
 
-def generate_pdf(mu1=5.,mu2=19.,ifr=0.006):
+def generate_pdf(shape=8.,scale=17/8.,n=180):
+    t = np.arange(n)
+    pdf = stats.gamma.pdf(t,shape,0,scale)
+    return pdf
+
+def convolution_matrix(pdf,length):
+    pdf = pdf[:length]
+    row = np.zeros(len(pdf)); row[0] = pdf[0]
+    M0  = linalg.toeplitz(pdf, row);
+    return M0
+
+def generate_pdf_old(mu1=4.,mu2=15.):
     nD = 180
     vr1 = 0.86
     sigma1 = vr1**2*mu1
@@ -25,7 +37,7 @@ def generate_pdf(mu1=5.,mu2=19.,ifr=0.006):
     pdf = counts/sum(counts)
     np.savetxt('time_to_death.txt',pdf)
 
-def infer_infections_simple(deaths, pdf, ifr, neglect=0):
+def infer_infections(deaths, pdf, ifr, neglect=0):
     if neglect:
         deaths = deaths[:-neglect]
 
@@ -53,20 +65,17 @@ def infer_infections_simple(deaths, pdf, ifr, neglect=0):
     for i, reg in enumerate(regs):
         L = np.vstack((A,reg*I)); 
         inIreg, _ = optimize.nnls(L,b)
-        errs[i] = 10*np.abs( ifr*np.sum(inIreg)-np.sum(dd)) + np.sum(np.abs(np.abs(A@inIreg-dd)))
+        errs[i] = np.abs( ifr*np.sum(inIreg)-np.sum(dd)) + np.sum(np.abs(np.abs(A@inIreg-dd)))
     reg = regs[np.argmin(errs)]
     L = np.vstack((A,reg*I)); 
     infections, _ = optimize.nnls(L,b)
     
     return infections, M0
 
-def infer_infections(deaths, pdf, ifr, nTrials=10, neglect=0, perturb=True):
-    #data_dates, cum_cases, cum_deaths = data.load_time_series(region)
-    #deaths = np.insert(np.diff(cum_deaths),0,cum_deaths[0])
+def infer_infections_slow(deaths, pdf, ifr, nTrials=1000, maxpertfac=1., neglect=0, perturb=True):
     if neglect:
         deaths = deaths[:-neglect]
 
-    #ifr = 0.007
     nOffDays = 0  # Initial days with zero chance of death
     nDays = len(deaths)   
 
@@ -89,9 +98,7 @@ def infer_infections(deaths, pdf, ifr, nTrials=10, neglect=0, perturb=True):
         else:
             A0  = M0[nOffDays:, :];   # Trim convolution matrix if needed
         if perturb:
-            maxpertfac = 0.1
             pdf_pert = pdf*(1+np.random.uniform(-1,1,pdf.shape)*maxpertfac); # Perturb each day's fatality with uniformly distributed noise
-            #pdf_pert = 2*pdf*np.random.uniform(0,1,pdf.shape)
             row = np.zeros(nDays); row[0] = pdf_pert[0]
             M   = linalg.toeplitz(pdf_pert, row); # Perturbed convolution matrix
             if nOffDays>0:

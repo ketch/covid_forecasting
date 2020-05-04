@@ -444,6 +444,8 @@ lockdown_start = {
     'Norway' : ['03-24-2020'],
     'Switzerland' : ['03-20-2020'],
     'United Kingdom' : ['03-24-2020'],
+    'China' : ['01-23-2020'],
+    'Korea, South': ['02-28-2020'],
 }
 
 
