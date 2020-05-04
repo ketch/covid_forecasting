@@ -21,11 +21,9 @@ General nomenclature:
 """
 
 default_ifr = 0.006
-default_beta=0.27
-default_gamma=0.07
+default_gamma = 1./14
+default_beta = 3.8*default_gamma
 smooth = True
-hr = 10 # Hospitalizations per death
-
 
 def avg_ifr(region,which='mean'):
     if which == 'mean':
@@ -357,20 +355,12 @@ def plot_forecast(inferred_data_dates, cum_deaths, mttd, prediction_dates, pred_
             plotfun(prediction_dates,pred_cum_deaths,'-k',label='Deaths (predicted)')
             if plot_interval:
                 plt.fill_between(prediction_dates,pred_cum_deaths_low,pred_cum_deaths_high,color='grey',zorder=-1)
-        elif plot_value == 'hospitalizations':
-            plotfun(prediction_dates,pred_cum_deaths*hr,'-k',label='Hospitalizations (predicted)')
-            if plot_interval:
-                plt.fill_between(prediction_dates,pred_cum_deaths_low*hr,pred_cum_deaths_high*hr,color='grey',zorder=-1)
     elif plot_type=='daily':
         if plot_value == 'deaths':
             plotfun(inferred_data_dates[1:],np.diff(cum_deaths),'-',lw=3,label='Deaths (recorded)')
             plotfun(prediction_dates,pred_daily_deaths,'-k',label='Deaths (predicted)')
             if plot_interval:
                 plt.fill_between(prediction_dates,pred_daily_deaths_low,pred_daily_deaths_high,color='grey',zorder=-1)
-        elif plot_value == 'hospitalizations':
-            plotfun(prediction_dates,pred_daily_deaths*hr,'-k',label='Hospitalizations (predicted)')
-            if plot_interval:
-                plt.fill_between(prediction_dates,pred_daily_deaths_low*hr,pred_daily_deaths_high*hr,color='grey',zorder=-1)
 
     plt.legend(loc='best')
 
@@ -510,6 +500,7 @@ def no_intervention_scenario(region,pdf,beta=default_beta,gamma=default_gamma,un
     We ought to change this to use proper (deconvolution-based) past inference for the initial data.
     Should also allow direct specification of the start date.
     """
+    forecast_length = 0 # Need to fix this
     ifr = avg_ifr(region,ifr_val)
     data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
     cum_deaths = cum_deaths*undercount_factor
@@ -567,6 +558,8 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
     output = {}
     gamma = default_gamma
     beta = default_beta
+    pdf = deconvolution.generate_pdf(8.,17./8.)
+    
 
     for region in regions:
 
@@ -603,7 +596,7 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         all_dates = past_dates+prediction_dates
 
         # No-intervention scenario
-        no_interv_dates, no_interv_deaths, no_interv_new_infections = no_intervention_scenario(region,forecast_length=forecast_length)
+        no_interv_dates, no_interv_deaths, no_interv_new_infections = no_intervention_scenario(region,pdf,beta,gamma,forecast_length=forecast_length)
         no_interv_dates = [datetime.strftime(d,"%m/%d/%Y") for d in no_interv_dates]
 
         output[region] = {}
