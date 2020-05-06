@@ -7,7 +7,7 @@ import matplotlib.dates as mdates
 import data
 import json
 from scipy import optimize
-from utils import NumpyEncoder, smooth_series
+from cf_utils import NumpyEncoder, smooth_series
 from datetime import datetime, date
 import deconvolution
 
@@ -37,9 +37,6 @@ def avg_ifr(region,which='mean'):
         ifr_values = data.ifr_low
     elif which == 'high':
         ifr_values = data.ifr_high
-    age_data = data.age_distribution
-    if not region in age_data.keys():
-        return default_ifr
     age_data = data.age_distribution
     if not region in age_data.keys():
         return default_ifr
