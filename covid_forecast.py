@@ -24,6 +24,7 @@ default_ifr = 0.006
 default_gamma = 1./14
 default_beta = 3.0*default_gamma
 smooth = True
+default_pdf = deconvolution.generate_pdf(8.,1./default_gamma/8.)
 
 def avg_ifr(region,which='mean'):
     """
@@ -69,6 +70,44 @@ def get_mttd(daily_deaths):
     dist = np.convolve(daily_deaths[-window:],p)
     offset = np.sum([(i+0.5)*dist[i] for i in range(len(dist))])/np.sum([dist[i]for i in range(len(dist))])
     return mean-((offset-2*std-window/2))
+
+
+def SIRp(u0, dI_hist, pdf, beta=default_beta, gamma=default_gamma, N = 1, T=14, q=0, intervention_start=0, intervention_length=0):
+    """
+    SIR model with general infectious period (Brauer-Castillo-Chavez Section 9.6).
+    Run the SIR model with initial data u0 and given parameters.
+        - u0: Initial susceptible and infected
+        - dI_hist: newly infected for past dates
+        - pdf: Probability distribution for time from infection to removal
+        - q: intervention strength (1=no human contact; 0=normal contact)
+        - intervention_start, intervention_length: measured from simulation start (t=0) in days
+    """
+    T = int(T)
+    def qqq(t):
+        if callable(q):
+            qval = q(t)
+        else:
+            if intervention_start<=t<=intervention_start+intervention_length:
+                qval = q
+            else:
+                qval = 0.
+        return qval
+    qq = np.vectorize(qqq)
+
+    S = np.zeros(T+1); S[0] = u0[0]
+    I = np.zeros(T+1); I[0] = u0[1]
+    R = np.zeros(T+1); R[0] = u0[2]
+    for j in range(T):
+        S[j+1] = S[j] - (1-qq(j))*beta*S[j]*I[j]/N
+        if j>0:
+            I[j+1] = I[j] + (1-qq(j))*beta*S[j]*I[j]/N - sum(dI_hist*pdf[j:j+len(dI_hist)][::-1]) \
+                        - sum((1-qq(np.arange(j)))*beta*S[:j]*I[:j]*pdf[:j][::-1])/N
+        else:
+            I[j+1] = I[j] + (1-qq(j))*beta*S[j]*I[j]/N - sum(dI_hist*pdf[j:j+len(dI_hist)][::-1])
+    
+    N0 = np.sum(u0)
+    R = N0-S-I
+    return S, I, R
 
 
 def SIR(u0, beta=default_beta, gamma=default_gamma, N = 1, T=14, q=0, intervention_start=0, intervention_length=0):
@@ -168,7 +207,7 @@ def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,method='deconvolution',
 
     elif method == 'deconvolution':
         if pdf is None:
-            pdf = deconvolution.generate_pdf(8.,1./gamma/8.)
+            pdf = default_pdf
         offset1 = deconvolution.get_offset(pdf,threshold=0.10)
         offset2 = get_mttd(daily_deaths)
         offset = int(round(0.5*(offset1+offset2)))
@@ -194,7 +233,7 @@ def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,method='deconvolution',
         return u0, offset, inferred_data_dates
 
 
-def forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=default_beta,gamma=default_gamma,q=0.,intervention_start=0,
+def forecast(u0,dI_hist,mttd,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=default_beta,gamma=default_gamma,q=0.,intervention_start=0,
              intervention_length=30,forecast_length=14,death_model='gamma',q_interval=None):
     """Forecast with SIR model.  All times are in days.
 
@@ -217,9 +256,13 @@ def forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=default_bet
         We could change this to just return daily values, since cumulative values
         can be constructed from those.
     """
-    S_mean, I_mean, R_mean = SIR(u0, beta=beta, gamma=gamma, N=N, T=mttd+forecast_length, q=q,
+    pdf = default_pdf
+    S_mean, I_mean, R_mean = SIRp(u0, dI_hist, pdf, beta=beta, gamma=gamma, N=N, T=mttd+forecast_length, q=q,
                                  intervention_start=intervention_start+mttd,
                                  intervention_length=intervention_length)
+    #S_mean, I_mean, R_mean = SIR(u0, beta=beta, gamma=gamma, N=N, T=mttd+forecast_length, q=q,
+    #                             intervention_start=intervention_start+mttd,
+    #                             intervention_length=intervention_length)
     
 
     prediction_dates = inferred_data_dates[-(mttd+1)]+range(forecast_length+mttd+1)
@@ -242,9 +285,10 @@ def forecast(u0,mttd,N,inferred_data_dates,cum_deaths,ifr=0.007,beta=default_bet
 
         pred_daily_deaths_low = np.diff(R_mean); pred_daily_deaths_high = np.diff(R_mean)
         for q in np.linspace(qmin,qmax,10):
-            S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=mttd+forecast_length, q=q,
-                         intervention_start=intervention_start+mttd,
-                         intervention_length=intervention_length)
+            S, I, R= SIRp(u0, dI_hist, pdf, beta=beta, gamma=gamma, N=N,
+                          T=mttd+forecast_length, q=q,
+                          intervention_start=intervention_start+mttd,
+                          intervention_length=intervention_length)
 
             S_low = np.minimum(S_low,S)
             I_low = np.minimum(I_low,I)
@@ -342,7 +386,8 @@ def fit_q_and_forecast(region,beta=default_beta,gamma=default_gamma,forecast_len
     data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
     data_start = mdates.date2num(data_dates[0])  # First day for which we have data
 
-    u0, offset, inferred_data_dates = infer_initial_data(cum_deaths,data_start,ifr,gamma,N)
+    u0, offset, inf_dates, inf_I, inf_R, inf_newI = \
+        infer_initial_data(cum_deaths,data_start,ifr,gamma,N,extended_output=1)
     cum_deaths = np.insert(cum_deaths,0,[0]*offset)
     
     q_past, offset = assess_intervention_effectiveness(cum_deaths,N,ifr,data_dates,fit_type='linear')
@@ -352,8 +397,11 @@ def fit_q_and_forecast(region,beta=default_beta,gamma=default_gamma,forecast_len
         q_past = set_q
 
     # Integrate over offset (in past) to get initial data
-    S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=offset+1, q=q_past, intervention_start=0,
+    pdf = default_pdf
+    S, I, R= SIRp(u0, inf_newI[:-offset], pdf, beta, gamma, N=N, T=offset, q=q_past, intervention_start=0,
                  intervention_length=offset*2)
+    #S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=offset+1, q=q_past, intervention_start=0,
+    #             intervention_length=offset*2)
 
     u0 = np.array([S[-1],I[-1],R[-1]])
 
@@ -375,7 +423,7 @@ def fit_q_and_forecast(region,beta=default_beta,gamma=default_gamma,forecast_len
 
     prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
       pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, \
-      S = forecast(u0,0,N,[inferred_data_dates[-1]],cum_deaths,ifr,beta,gamma,
+      S = forecast(u0,inf_newI[:-offset],0,N,[inf_dates[-1]],cum_deaths,ifr,beta,gamma,
                  q_current,intervention_start,intervention_length,forecast_length,'gamma',q_interval=[qmin,qmax])
     
     pred_daily_new_infections = - np.diff(S)
@@ -401,8 +449,13 @@ def get_past_infections(region,beta=default_beta,gamma=default_gamma):
         infer_initial_data(cum_deaths,data_start,ifr,gamma,N,extended_output=1)
 
     q_past, offset = assess_intervention_effectiveness(cum_deaths,N,ifr,data_dates)
-    S, I, R= SIR(u0, beta, gamma, N=N, T=offset, q=q_past, intervention_start=0,
+
+    pdf = default_pdf
+    S, I, R= SIRp(u0, inf_newI[:-offset], pdf, beta, gamma, N=N, T=offset, q=q_past, intervention_start=0,
                  intervention_length=offset*2)
+    #S, I, R= SIR(u0, beta, gamma, N=N, T=offset, q=q_past, intervention_start=0,
+    #             intervention_length=offset*2)
+
     inf_newI[-offset:] = -np.diff(S)
     return inf_dates, inf_newI
 
@@ -459,7 +512,9 @@ def no_intervention_scenario(region,pdf,beta=default_beta,gamma=default_gamma,un
     end_date = (mdates.num2date(mdates.date2num(data_dates[-1])+forecast_length)).replace(tzinfo=None)
     no_intervention_dates = list(pd.date_range(start=start_date,end=end_date))
 
-    S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=T, q=0., intervention_start=0, intervention_length=0)
+    pdf = default_pdf
+    S, I, R= SIRp(u0, delta_I[:start_ind], pdf, beta=beta, gamma=gamma, N=N, T=T, q=0., intervention_start=0, intervention_length=0)
+    #S, I, R= SIR(u0, beta=beta, gamma=gamma, N=N, T=T, q=0., intervention_start=0, intervention_length=0)
     assert(len(S)==len(no_intervention_dates))
 
     no_interv_new_infections = np.insert(-np.diff(S),0,-np.diff(S)[0])
@@ -485,7 +540,7 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
     output = {}
     gamma = default_gamma
     beta = default_beta
-    pdf = deconvolution.generate_pdf(8.,17./8.,2*forecast_length)
+    pdf = deconvolution.generate_pdf(8.,14./8.,2*forecast_length)
     
 
     for region in regions:
@@ -578,7 +633,7 @@ def assess_intervention_effectiveness(cum_deaths, N, ifr, data_dates, plot_resul
     intervention_length=offset
     forecast_length=0
 
-    pdf = deconvolution.generate_pdf(8.,1./gamma/8.)
+    pdf = default_pdf
 
     def fit_q_linear(v):
         "Fit a linearly-varying (in time) intervention factor to the recent data."
@@ -588,7 +643,7 @@ def assess_intervention_effectiveness(cum_deaths, N, ifr, data_dates, plot_resul
         qfun = lambda t: q0+slope*t
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
-          = forecast(u0,offset,N,inf_dates,cum_deaths,ifr,beta,gamma,qfun,
+          = forecast(u0,delta_I[:-offset],offset,N,inf_dates,cum_deaths,ifr,beta,gamma,qfun,
                      intervention_start,intervention_length,forecast_length,'gamma')
 
         new_infections[-len(S)+1:] = -np.diff(S)
@@ -606,7 +661,7 @@ def assess_intervention_effectiveness(cum_deaths, N, ifr, data_dates, plot_resul
         if q<-10: return 1e99
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
-          = forecast(u0,offset,N,inf_dates,cum_deaths,ifr,beta,gamma,q,
+          = forecast(u0,delta_I[:-offset],offset,N,inf_dates,cum_deaths,ifr,beta,gamma,q,
                      intervention_start,intervention_length,forecast_length,'gamma')
 
         new_infections[-len(S)+1:] = -np.diff(S)
@@ -629,7 +684,7 @@ def assess_intervention_effectiveness(cum_deaths, N, ifr, data_dates, plot_resul
     if plot_result:
         prediction_dates, pred_cum_deaths, pred_cum_deaths_low, \
           pred_cum_deaths_high, pred_daily_deaths_low, pred_daily_deaths_high, S \
-          = forecast(u0,offset,N,inf_dates,cum_deaths,ifr,beta,gamma,qfun,
+          = forecast(u0,delta_I[:-offset],offset,N,inf_dates,cum_deaths,ifr,beta,gamma,qfun,
                      intervention_start,intervention_length,forecast_length,'gamma')
 
         new_infections[-len(S)+1:] = -np.diff(S)
