@@ -498,11 +498,11 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
         # China's recent data is nonsense.
         if region == 'China': continue
 
-        N = data.get_population(region)
-        ifr = avg_ifr(region)
-
         data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth)
         if cum_deaths[-1]<50: continue
+
+        N = data.get_population(region)
+        ifr = avg_ifr(region)
 
         prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
             pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, \

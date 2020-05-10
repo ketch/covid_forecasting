@@ -106,6 +106,8 @@ def load_time_series(region,smooth=False,use_test_data=False):
         cum_deaths = list(us_states_df['deaths'][rows])
         cum_cases = list(us_states_df['cases'][rows])
     else:
+        if region in decode.keys():
+            region = decode[region]
         if use_test_data:
             test_files = ('./test_data/time_series_covid19_confirmed_global.csv','./test_data/time_series_covid19_deaths_global.csv')
             cases_df, deaths_df, data_dates = jhu_data(source_files=test_files)
@@ -114,7 +116,7 @@ def load_time_series(region,smooth=False,use_test_data=False):
         rows = cases_df['Country/Region'].isin([region])
         cum_cases = [cases_df[day.strftime('%-m/%-d/%y')][rows].sum() for day in data_dates]
         if not np.any(rows==True):
-            raise(Exception)
+            raise Exception('No time series found for '+region)
         rows = deaths_df['Country/Region'].isin([region])
         cum_deaths = [deaths_df[day.strftime('%-m/%-d/%y')][rows].sum() for day in data_dates]
     if smooth:
@@ -172,6 +174,10 @@ intervention_effects = {
     'quarantinepositives': 0.9,
 }
 
+decode = {
+    'Georgia (country)': 'Georgia'
+    }
+
 # Values below are taken from https://population.un.org/wpp/Download/Standard/CSV/.
 population = {
     'Afghanistan': 38928.341e3,
@@ -228,7 +234,7 @@ population = {
     'Fiji': 896.444e3,
     'Finland': 5540.718000000001e3,
     'France': 65273.512e3,
-    'Gabon': 2225.728e3,
+    #'Gabon': 2225.728e3,
     'Gambia': 2416.6639999999998e3,
     'Georgia (country)': 3989.175e3,
     'Germany': 83783.945e3,

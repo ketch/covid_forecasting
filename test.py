@@ -69,3 +69,24 @@ def test_inference():
     assert(offset==20)
     assert(inferred_data_dates[0]==737485.0)
     assert(np.all(np.isclose(u0,np.array([17078249.0462995 ,   770405.00883876,  1604906.94486174]))))
+
+def test_forecast():
+    region = 'Saudi Arabia'
+    data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth=True)
+
+    N = data.get_population(region)
+    ifr = cf.avg_ifr(region)
+
+    beta = cf.default_beta
+    gamma = cf.default_gamma
+    forecast_length=10
+
+    prediction_dates, pred_daily_deaths, pred_daily_deaths_low, pred_daily_deaths_high, \
+        pred_cum_deaths, pred_cum_deaths_low, pred_cum_deaths_high, \
+        q_past, immune_fraction, apparent_R, offset, pred_daily_new_infections = \
+        cf.fit_q_and_forecast(region,beta,gamma,forecast_length)
+
+    assert(np.isclose(q_past, 0.41075930495680424))
+    assert(np.isclose(pred_daily_deaths[-2], 21.40227804842516))
+    assert(np.isclose(apparent_R, 1.7677220851295872))
+    assert(np.isclose(pred_cum_deaths_low[-1], 367.01834601382996))
