@@ -143,7 +143,7 @@ def SIR2(u0, beta=default_beta, gamma=default_gamma, N = 1, T=14, q=[0], interve
     return S, I, R
 
 
-def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,method='deconvolution',extended_output=False,pdf=None,perturb=False):
+def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,method='deconvolution',extended_output=False,pdf=None,nTrials=1):
     """
     Given a sequence of cumulative deaths, infer current values of S, I, and R
     for a population.  The inference dates are offset (backward) from
@@ -177,8 +177,8 @@ def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,method='deconvolution',
         offset1 = deconvolution.get_offset(pdf,threshold=0.10)
         offset2 = get_mttd(daily_deaths)
         offset = int(round(0.5*(offset1+offset2)))
-        if perturb:
-            inf_daily_infections, _ = deconvolution.infer_infections_slow(daily_deaths,pdf,ifr)
+        if nTrials>1:
+            inf_daily_infections, _ = deconvolution.infer_infections_slow(daily_deaths,pdf,ifr,nTrials=nTrials)
         else:
             inf_daily_infections, _ = deconvolution.infer_infections(daily_deaths,pdf,ifr)
         inferred_data_dates = np.arange(data_start,data_start+len(cum_deaths))
@@ -391,13 +391,14 @@ def fit_q_and_forecast(region,beta=default_beta,gamma=default_gamma,forecast_len
             q_current, immune_fraction, apparent_R, offset, pred_daily_new_infections
 
 
-def get_past_infections(region,beta=default_beta,gamma=default_gamma,perturb=False,which_ifr='mean',emr=1.0):
+def get_past_infections(region,beta=default_beta,gamma=default_gamma,nTrials=1,which_ifr='mean',emr=1.0):
     """Infer past infections up to offset days in the past.  Then model up to the present
        based on a fitted intervention effectiveness.
 
        Inputs:
             - emr: estimated mortality ratio; real deaths are assumed to be reported deaths x emr.
-            - perturb: if True, us stochastic deconvolution procedure.  Much slower, but more accurate
+            - nTrials: # of trials to use in stochastic deconvolution procedure.  If nTrials=1,
+                deterministic procedure is used.  The stochastic version is slower, but more accurate
                 for the early stage of the epidemic.
     """
 
@@ -408,7 +409,7 @@ def get_past_infections(region,beta=default_beta,gamma=default_gamma,perturb=Fal
     cum_deaths = cum_deaths*emr
 
     u0, offset, inf_dates, inf_I, inf_R, inf_newI = \
-        infer_initial_data(cum_deaths,data_start,ifr,gamma,N,extended_output=1,perturb=perturb)
+        infer_initial_data(cum_deaths,data_start,ifr,gamma,N,extended_output=1,nTrials=nTrials)
 
     q_past, offset = assess_intervention_effectiveness(cum_deaths,N,ifr,data_dates)
     S, I, R= SIR(u0, beta, gamma, N=N, T=offset, q=q_past, intervention_start=0,

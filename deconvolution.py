@@ -72,7 +72,7 @@ def infer_infections(deaths, pdf, ifr, neglect=0):
     
     return infections, M0
 
-def infer_infections_slow(deaths, pdf, ifr, nTrials=1000, maxpertfac=1., neglect=0, perturb=True):
+def infer_infections_slow(deaths, pdf, ifr, nTrials=1000, maxpertfac=1., neglect=0):
     if neglect:
         deaths = deaths[:-neglect]
 
@@ -97,7 +97,7 @@ def infer_infections_slow(deaths, pdf, ifr, nTrials=1000, maxpertfac=1., neglect
             A0  = M0[nOffDays:, :-nOffDays];   # Trim convolution matrix if needed
         else:
             A0  = M0[nOffDays:, :];   # Trim convolution matrix if needed
-        if perturb:
+        if nTrials>1:
             pdf_pert = pdf*(1+np.random.uniform(-1,1,pdf.shape)*maxpertfac); # Perturb each day's fatality with uniformly distributed noise
             row = np.zeros(nDays); row[0] = pdf_pert[0]
             M   = linalg.toeplitz(pdf_pert, row); # Perturbed convolution matrix
