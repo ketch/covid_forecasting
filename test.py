@@ -72,7 +72,7 @@ def test_inference():
 
 def test_forecast():
     region = 'Saudi Arabia'
-    data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth=True)
+    data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth=True,use_test_data=True)
 
     N = data.get_population(region)
     ifr = cf.avg_ifr(region)
@@ -86,7 +86,7 @@ def test_forecast():
         q_past, immune_fraction, apparent_R, offset, pred_daily_new_infections = \
         cf.fit_q_and_forecast(region,beta,gamma,forecast_length)
 
-    assert(np.isclose(q_past, 0.41075930495680424))
-    assert(np.isclose(pred_daily_deaths[-2], 21.40227804842516))
-    assert(np.isclose(apparent_R, 1.7677220851295872))
-    assert(np.isclose(pred_cum_deaths_low[-1], 367.01834601382996))
+    assert(np.isclose(q_past, 0.44939526402323837))
+    assert(np.isclose(pred_daily_deaths[-2], 17.371300685637266))
+    assert(np.isclose(apparent_R, 1.6518142079302849))
+    assert(np.isclose(pred_cum_deaths_low[-1], 349.63620708222174))

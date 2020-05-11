@@ -394,6 +394,11 @@ def fit_q_and_forecast(region,beta=default_beta,gamma=default_gamma,forecast_len
 def get_past_infections(region,beta=default_beta,gamma=default_gamma,perturb=False,which_ifr='mean',emr=1.0):
     """Infer past infections up to offset days in the past.  Then model up to the present
        based on a fitted intervention effectiveness.
+
+       Inputs:
+            - emr: estimated mortality ratio; real deaths are assumed to be reported deaths x emr.
+            - perturb: if True, us stochastic deconvolution procedure.  Much slower, but more accurate
+                for the early stage of the epidemic.
     """
 
     N = data.get_population(region)
@@ -617,7 +622,7 @@ def assess_intervention_effectiveness(cum_deaths, N, ifr, data_dates, plot_resul
         pred_daily_deaths = deaths_from_infections(new_infections,pdf,ifr)
         log_pred_daily_deaths = np.log(np.maximum(pred_daily_deaths[-offset:],1.))
         log_daily_deaths = np.log(np.maximum(np.diff(cum_deaths)[-offset:],1.))
-        residual = np.linalg.norm(np.ones(offset)**2*(log_pred_daily_deaths-smooth_series(log_daily_deaths)))
+        residual = np.linalg.norm((log_pred_daily_deaths-smooth_series(log_daily_deaths)))
         return residual
 
     if fit_type == 'linear':
