@@ -139,33 +139,8 @@ def load_time_series(region,smooth=False,use_test_data=False):
         return data_dates, np.array(cum_cases), np.array(cum_deaths)
 
 
-population_smallset = {
-    'Austria': 8.822e6,
-    'France': 66.99e6,
-    'Germany': 82.79e6,
-    'Korea, South': 51.47e6,
-    'Italy' : 60.48e6,
-    'Netherlands': 17.18e6,
-    'Spain' : 46.66e6,
-    'Switzerland': 8.57e6,
-    'United Kingdom': 66.44e6,
-    'US' : 372.2e6,
-    'Canada': 37.59e6,
-    'Belgium': 11.4e6,
-    'Denmark': 5.603e6,
-    'Sweden': 10.12e6,
-    'Brazil': 209.3e6,
-    'Australia': 24.6e6,
-}
 
-intervention_strength = {
-    'No action': 0.,
-    'Limited action': 0.1,
-    'Social distancing': 0.35,
-    'Shelter in place': 0.6,
-    'Full lockdown': 0.85
-}
-
+# These are the estimated values from the Imperial College report of March 30.
 intervention_effects = {
     'mandatorylockdown' : 0.5,
     'publiceventsbanned': 0.9,
@@ -487,6 +462,7 @@ ifr_high = np.array([0.0249,0.050,0.092,0.185,0.32,1.3,3.9,8.4,13.3])/100
 
 # Age ranges are 10-year intervals starting with 0-9 years, up to 90-99 years
 # From https://www.census.gov/data/tables/time-series/demo/popest/2010s-state-detail.html
+# See notebook US_census_data.ipynb
 age_distribution_US_states = {
     'Alabama': np.array([594634.6545829107,628842.8237667787,663877.9041422107,606627.884784648,602430.9583963199,654673.23576896,592680.0457687876,369977.36987039977,189440.1229189851]) ,
     'Alaska': np.array([107154.59294041946,96991.45800226461,105495.88780966096,105134.19228053365,86527.75917370818,95378.60160055042,81950.01829379542,38074.8223196839,14837.667579383373]) ,
@@ -727,4 +703,112 @@ emr = {
 
 death_underreporting_US_states = {
     'New York': 1.23,
+}
+
+
+# These are dates when internal movement was restricted for the whole country.
+# From Oxford data set, provided by Paula Moraga.
+# See notebook lockdown_dates.ipynb
+
+internal_lockdown_date = {
+'Bermuda'           : '2020-03-02',
+'Iran'              : '2020-03-05',
+'Palestine'         : '2020-03-05',
+'Italy'             : '2020-03-10',
+'Estonia'           : '2020-03-12',
+'Ukraine'           : '2020-03-12',
+'Albania'           : '2020-03-13',
+'Venezuela'         : '2020-03-13',
+'Belgium'           : '2020-03-14',
+'Luxembourg'        : '2020-03-15',
+'Peru'              : '2020-03-15',
+'Puerto Rico'       : '2020-03-15',
+'Iraq'              : '2020-03-16',
+'Paraguay'          : '2020-03-16',
+'Costa Rica'        : '2020-03-17',
+'Ecuador'           : '2020-03-17',
+'France'            : '2020-03-17',
+'Guatemala'         : '2020-03-17',
+'Jordan'            : '2020-03-18',
+'Lesotho'           : '2020-03-18',
+'Malaysia'          : '2020-03-18',
+'Oman'              : '2020-03-18',
+'Philippines'       : '2020-03-18',
+'Serbia'            : '2020-03-18',
+'Honduras'          : '2020-03-19',
+'Norway'            : '2020-03-19',
+'Russia'            : '2020-03-19',
+'Argentina'         : '2020-03-20',
+'Dominican Republic': '2020-03-20',
+'Sri Lanka'         : '2020-03-20',
+'Morocco'           : '2020-03-20',
+'Tunisia'           : '2020-03-20',
+'Burkina Faso'      : '2020-03-21',
+'Bulgaria'          : '2020-03-21',
+'Bolivia'           : '2020-03-21',
+'South Korea'       : '2020-03-21',
+'Madagascar'        : '2020-03-21',
+'Rwanda'            : '2020-03-21',
+'El Salvador'       : '2020-03-21',
+'India'             : '2020-03-22',
+'Libya'             : '2020-03-22',
+'United Arab Emirates': '2020-03-23',
+'Cuba'              : '2020-03-23',
+'Djibouti'          : '2020-03-23',
+'United Kingdom'    : '2020-03-23',
+'Greece'            : '2020-03-23',
+'Croatia'           : '2020-03-23',
+'New Zealand'       : '2020-03-23',
+'Panama'            : '2020-03-23',
+'Democratic Republic of Congo': '2020-03-24',
+'Cyprus'            : '2020-03-24',
+'Egypt'             : '2020-03-24',
+'Moldova'           : '2020-03-24',
+'Papua New Guinea'  : '2020-03-24',
+'Bangladesh'        : '2020-03-25',
+'Colombia'          : '2020-03-25',
+'Kyrgyz Republic'   : '2020-03-25',
+'Mali'              : '2020-03-25',
+'Saudi Arabia'      : '2020-03-25',
+'Pakistan'          : '2020-03-26',
+'South Africa'      : '2020-03-26',
+'Angola'            : '2020-03-27',
+'Kenya'             : '2020-03-27',
+'Eswatini'          : '2020-03-27',
+'Uzbekistan'        : '2020-03-27',
+'Barbados'          : '2020-03-28',
+'Hungary'           : '2020-03-28',
+'Ireland'           : '2020-03-28',
+'Turkey'            : '2020-03-28',
+'Vietnam'           : '2020-03-28',
+'Aruba'             : '2020-03-29',
+'Mauritania'        : '2020-03-29',
+'Laos'              : '2020-03-30',
+'Mexico'            : '2020-03-30',
+'Slovenia'          : '2020-03-30',
+'Uganda'            : '2020-03-30',
+'Zimbabwe'          : '2020-03-30',
+'Azerbaijan'        : '2020-03-31',
+'Poland'            : '2020-03-31',
+'Cape Verde'        : '2020-04-01',
+'Syria'             : '2020-04-01',
+'Uruguay'           : '2020-04-01',
+'Guyana'            : '2020-04-03',
+'Canada'            : '2020-04-04',
+'Dominica'          : '2020-04-04',
+'Sierra Leone'      : '2020-04-05',
+'Israel'            : '2020-04-07',
+'Slovak Republic'   : '2020-04-08',
+'Seychelles'        : '2020-04-08',
+'Portugal'          : '2020-04-09',
+'South Sudan'       : '2020-04-12',
+'Chad'              : '2020-04-13',
+'Namibia'           : '2020-04-17',
+'San Marino'        : '2020-04-17',
+'Nigeria'           : '2020-04-23',
+'Indonesia'         : '2020-04-24',
+'Myanmar'           : '2020-04-26',
+'Singapore'         : '2020-04-26',
+'Jamaica'           : '2020-04-27',
+'Trinidad and Tobago': '2020-04-28'
 }
