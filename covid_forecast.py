@@ -304,7 +304,7 @@ def plot_forecast(inferred_data_dates, cum_deaths, mttd, prediction_dates, pred_
     plt.title(plot_title)
 
 
-def compute_and_plot(region='Spain',beta=default_beta,gamma=default_gamma,q=0.,
+def compute_and_plot(region,beta=default_beta,gamma=default_gamma,q=0.,
              intervention_start=0,intervention_length=30,forecast_length=14,scale='linear',
              plot_type='cumulative',plot_value='deaths',plot_past_pred=True,plot_interval=True,
              death_model='gamma',estimate_q=False):
@@ -556,7 +556,7 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
 
         data_dates, cum_cases, cum_deaths = data.load_time_series(region,smooth=False)
         three_day_avg = np.mean(np.diff(cum_deaths)[-3:])
-        output[region]['last three days average deaths'] = three_day_avg
+        output[region]['last three days average deaths per capita'] = three_day_avg/N
         
     with open('./output/forecast_{}.json'.format(date.today()), 'w') as file:
         json.dump(output, file, cls=NumpyEncoder)
