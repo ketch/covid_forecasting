@@ -176,7 +176,10 @@ def infer_initial_data(cum_deaths,data_start,ifr,gamma,N,method='deconvolution',
             pdf = deconvolution.generate_pdf(8.,1./gamma/8.)
         offset1 = deconvolution.get_offset(pdf,threshold=0.10)
         offset2 = get_mttd(daily_deaths)
-        offset = int(round(0.5*(offset1+offset2)))
+        try:
+            offset = int(round(0.5*(offset1+offset2)))
+        except:
+            offset = offset1
         if nTrials>1:
             inf_daily_infections, _ = deconvolution.infer_infections_slow(daily_deaths,pdf,ifr,nTrials=nTrials)
         else:

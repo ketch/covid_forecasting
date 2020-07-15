@@ -8,9 +8,9 @@ def get_offset(pdf,threshold):
     cdf = np.cumsum(pdf)/np.sum(pdf)
     good = (1-cdf)<threshold
     offset = np.flatnonzero(good)[0]
-    return offset
+    return int(offset)
 
-def generate_pdf(shape=8.,scale=17/8.,n=180):
+def generate_pdf(shape=8.,scale=17/8.,n=280):
     t = np.arange(n)
     pdf = stats.gamma.pdf(t,shape,0,scale)
     return pdf
@@ -50,16 +50,15 @@ def infer_infections(deaths, pdf, ifr, neglect=0):
     
     I = np.eye(nDays-nOffDays)
     z = np.zeros(nDays-nOffDays)
-    dd  = deaths[nOffDays:];        # Trim the daily death vector to match A/A0
+    dd  = deaths[nOffDays:];        # Trim the daily death vector to match A
     b = np.hstack((dd,z))
 
     row = np.zeros(nDays); row[0] = pdf[0]
     M0  = linalg.toeplitz(pdf, row);   # Convolution matrix without perturbation
     if nOffDays>0:
-        A0  = M0[nOffDays:, :-nOffDays];   # Trim convolution matrix if needed
+        A  = M0[nOffDays:, :-nOffDays];   # Trim convolution matrix if needed
     else:
-        A0  = M0[nOffDays:, :];   # Trim convolution matrix if needed
-    A = A0
+        A  = M0[nOffDays:, :];   # Trim convolution matrix if needed
     regs = np.linspace(1e-4,1e-2) # Regularization parameter search range
     errs = np.zeros_like(regs)     # Measure of fit for each reg param value
     for i, reg in enumerate(regs):
