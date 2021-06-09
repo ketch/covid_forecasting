@@ -10,7 +10,7 @@ def get_offset(pdf,threshold):
     offset = np.flatnonzero(good)[0]
     return int(offset)
 
-def generate_pdf(shape=8.,scale=17/8.,n=480):
+def generate_pdf(shape=8.,scale=17/8.,n=580):
     t = np.arange(n)
     pdf = stats.gamma.pdf(t,shape,0,scale)
     return pdf
@@ -22,7 +22,7 @@ def convolution_matrix(pdf,length):
     return M0
 
 def generate_pdf_old(mu1=4.,mu2=15.):
-    nD = 180
+    nD = 380
     vr1 = 0.86
     sigma1 = vr1**2*mu1
     vr2 = 0.45

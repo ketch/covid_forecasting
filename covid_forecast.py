@@ -499,7 +499,7 @@ def write_JSON(regions, forecast_length=200, print_estimates=False):
     output = {}
     gamma = default_gamma
     beta = default_beta
-    pdf = deconvolution.generate_pdf(8.,14./8.,2*forecast_length)
+    pdf = deconvolution.generate_pdf(8.,14./8.,3*forecast_length)
     
 
     for region in regions:
