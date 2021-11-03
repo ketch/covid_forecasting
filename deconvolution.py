@@ -10,7 +10,7 @@ def get_offset(pdf,threshold):
     offset = np.flatnonzero(good)[0]
     return int(offset)
 
-def generate_pdf(shape=8.,scale=17/8.,n=580):
+def generate_pdf(shape=8.,scale=17/8.,n=680):
     t = np.arange(n)
     pdf = stats.gamma.pdf(t,shape,0,scale)
     return pdf
@@ -63,7 +63,11 @@ def infer_infections(deaths, pdf, ifr, neglect=0):
     errs = np.zeros_like(regs)     # Measure of fit for each reg param value
     for i, reg in enumerate(regs):
         L = np.vstack((A,reg*I)); 
-        inIreg, _ = optimize.nnls(L,b)
+        try:
+            inIreg, _ = optimize.nnls(L,b)
+        except:
+            print("You probably need to increase the value of n in generate_pdf().")
+            raise
         errs[i] = np.abs( ifr*np.sum(inIreg)-np.sum(dd)) + np.sum(np.abs(np.abs(A@inIreg-dd)))
     reg = regs[np.argmin(errs)]
     L = np.vstack((A,reg*I)); 
